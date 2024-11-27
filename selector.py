@@ -2,14 +2,23 @@ import os
 import shutil
 import numpy as np
 import cvxpy as cp
+import argparse
 
 def create_selected_folder_and_copy_files(times_tests, reference_file_path, weights, base_directory):
     """
     Создает папку test_folder_selected вне base_directory, копирует выбранные тесты с новыми именами,
     сохраняет reference.histo и весовой файл в compare_input рядом с первым тестом.
-    :param times_tests: Словарь тестов, содержащий пути и данные.
+    :param times_tests: Словарь тестов, содержащий пути и данные
+                        Ключ: Имя теста (например, "test1", "test2").
+                        Значение: Список из двух элементов:
+                            1)  Словарь, где:
+                                    Ключ: Числовой индекс функции (например, "0", "1").
+                                    Значение: Процентное значение функции в гистограмме (вещественное число).
+                            2)  Строка, представляющая путь к файлу (например, путь к trace.histo).
     :param reference_file_path: Путь к референсному файлу.
     :param weights: Словарь с весами для каждого теста.
+                    Ключ: Имя теста (например, "test1", "test2").
+                    Значение: Вес теста (вещественное число от 0 до 1), указывающий на его значимость.
     :param base_directory: Базовая директория, где находятся исходные тесты.
     """
     # Создаем папку test_folder_selected вне base_directory
@@ -26,10 +35,15 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
         if weight > 0:  # Обрабатываем только тесты с ненулевыми весами
             test_file_path = times_tests[test][1]  # Путь к файлу trace.histo
 
-            # Получаем путь до директории теста (например, test_1, test_2)
+            # Получаем путь до директории теста
             test_dir_path = os.path.dirname(os.path.dirname(test_file_path))
             rel_path = os.path.relpath(test_dir_path, base_directory)
             path_parts = rel_path.split(os.sep)
+
+            # Проверяем длину path_parts
+            if len(path_parts) <= 1:
+                print(f"Skipping test '{test}' due to unexpected path structure: '{rel_path}'")
+                continue
 
             # Определяем новый путь для переноса
             original_test_folder = path_parts[1]  # Исходное имя папки после <x>
@@ -70,6 +84,7 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
     print(f"Selected tests and their content have been copied to '{selected_folder}'.")
 
 
+
 def create_reference_mapping(reference_file):
     """
     Создает отображение 16-ричных значений функции на их индексы из референсного файла.
@@ -77,6 +92,11 @@ def create_reference_mapping(reference_file):
     Игнорируются строки с комментариями.
     :param reference_file: Путь к референсному файлу (например, compare_input/reference.histo).
     :return: Словарь с 16-ричными значениями как ключами и их позициями как значениями.
+    """
+    """
+    Ключ: 16-ричное значение функции (например, "0x1a2b").
+    Значение: Индекс этой функции (целое число, начиная с 0), 
+              который соответствует порядку её первой встречи в референсном файле.
     """
     reference_mapping = {}
     real_index = 0  # Индекс, который будет отслеживать строку без учета комментариев
@@ -149,13 +169,20 @@ def parse_file(file_path):
 def find_and_process_files(base_dir):
     """
     Обходит папки внутри указанной директории, ищет файлы reference.histo и trace.histo,
-    и заполняет словарь словарей.
+    и заполняет словарь словарей с дополнительным ключом <x>.
     :param base_dir: Базовая директория для поиска.
-    :return: Словарь словарей {путь файла: {функция: процентное значение}}.
+    :return: Словарь словарей {<x>: {путь файла: {функция: процентное значение}}}.
     """
     results = {}  # Основной словарь для хранения данных
 
     for root, dirs, files in os.walk(base_dir):
+        # Определяем текущую папку (уровень <x>)
+        relative_path = os.path.relpath(root, base_dir)
+        top_level_folder = relative_path.split(os.sep)[0] if relative_path != '.' else os.path.basename(base_dir)
+
+        if top_level_folder not in results:
+            results[top_level_folder] = {}
+
         # Проверяем наличие reference.histo
         reference_file = os.path.join(root, "compare_input", "reference.histo")
         if os.path.exists(reference_file):
@@ -163,7 +190,7 @@ def find_and_process_files(base_dir):
 
             # Парсим reference.histo и добавляем в словарь
             parsed_reference = parse_file(reference_file)
-            results[reference_file] = parsed_reference
+            results[top_level_folder][reference_file] = parsed_reference
 
             # Ищем все trace.histo в подпапках
             for sub_dir in dirs:
@@ -173,9 +200,10 @@ def find_and_process_files(base_dir):
 
                     # Парсим trace.histo и добавляем в словарь
                     parsed_trace = parse_file(trace_file_path)
-                    results[trace_file_path] = parsed_trace
+                    results[top_level_folder][trace_file_path] = parsed_trace
 
     return results
+
 
 def optimize_tests_continuous(times_tests, target_function, num_functions, max_sum_w):
     """
@@ -191,9 +219,8 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
             func_index = int(func) # Используем числовое значение как индекс
             s_i[func_index] = value
         s_list.append(s_i)
-
     s_list = np.array(s_list)
-
+    print(s_list)
     # Преобразование целевой функции в массив T
     T = np.zeros(num_functions)
     for func, value in target_function.items():
@@ -237,6 +264,10 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
         overall_similarity = np.sum(min_sums)
 
         # Сохранение веса каждого теста
+        """
+        Ключ: Имя теста (например, "test1", "test2").
+        Значение: Оптимизированный вес для этого теста (вещественное число от 0 до 1).
+        """
         result_weight = {}
         for i in range(len(times_tests)):
             result_weight[test_indices[i]] = w.value[i]
@@ -261,47 +292,75 @@ def replace_hex_keys_with_numerical(reference_data, swap_16):
 def replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16):
     """
     Заменяет все 16-ричные ключи на численные для всех элементов в словаре times_tests.
-    Если ключ отсутствует в swap_16, удаляет строку из times_tests.
+    Если ключ отсутствует в swap_16, добавляет его и приписывает новый порядковый номер.
     :param times_tests: Словарь с данными тестов.
     :param swap_16: Словарь с отображением 16-ричных ключей на численные индексы.
     :return: Обновленный словарь times_tests с численными ключами.
     """
-    # Создаем новый словарь с проверкой на наличие ключей в swap_16
+    """
+    Ключ: Имя теста (например, "test1", "test2").
+    Значение: Список из двух элементов:
+        1)  Словарь, где:
+                Ключ: Числовой индекс функции (например, "0", "1").
+                Значение: Процентное значение функции в гистограмме (вещественное число).
+        2)  Строка, представляющая путь к файлу (например, путь к trace.histo).
+    """
     updated_times_tests = {}
 
-    for key, value in times_tests.items():
-        # Фильтруем ключи и сохраняем только те, что есть в swap_16
-        updated_values = {swap_16[k]: v for k, v in value[0].items() if k in swap_16}
+    # Порядковый номер для новых значений
+    next_index = len(swap_16)
 
-        # Добавляем только те записи, где после фильтрации остались данные
-        if updated_values:
-            updated_times_tests[key] = [updated_values, value[1]]
+    for key, value in times_tests.items():
+        updated_values = {}
+
+        for hex_key, v in value[0].items():
+            # Если 16-ричный ключ не найден в swap_16, добавляем его с новым индексом
+            if hex_key not in swap_16:
+                swap_16[hex_key] = next_index
+                next_index += 1
+
+            # Заменяем 16-ричный ключ на численный
+            updated_values[str(swap_16[hex_key])] = v
+
+        # Добавляем обновленные значения в новый словарь
+        updated_times_tests[key] = [updated_values, value[1]]
 
     return updated_times_tests
-
-
 
 def process_reference(reference_key, parsed_data, base_directory, max_tests):
     """
     Обрабатывает оптимизацию и копирование данных для указанного референсного файла.
     :param reference_key: Путь к референсному файлу.
-    :param parsed_data: Распарсенные данные из всех файлов.
+    :param parsed_data: Распарсенные данные из всех файлов, разделенные по <x>.
     :param base_directory: Базовая директория поиска.
     :param max_tests: Максимальное количество тестов для оптимизации.
     """
+    # Извлекаем уровень <x> и данные для этого ключа
+    folder_key = os.path.dirname(reference_key).split(os.sep)[-2]  # Получаем <x> из пути
+    folder_data = parsed_data[folder_key]
+
     # Создаем отображение hex -> числовой индекс
+    """
+    Ключ: 16-ричное значение функции (например, "0x1a2b").
+    Значение: Числовой индекс функции (целое число, начиная с 0), 
+    который был сгенерирован при создании отображения из референсного файла.
+    """
     swap_16 = create_reference_mapping(reference_key)
 
-    # Получаем данные для reference и удаляем из общего parsed_data
-    reference_data = parsed_data.pop(reference_key)
+    # Получаем данные для reference и удаляем из общего folder_data
+    reference_data = folder_data.pop(reference_key)
+    """
+    Ключ: Числовой индекс функции (например, "0", "1", "2").
+    Значение: Процентное значение функции из референсной гистограммы (вещественное число).
+    """
     reference_data = replace_hex_keys_with_numerical(reference_data, swap_16)
 
     # Создаем times_tests с численными ключами
-    times_tests = {key: [value, key] for key, value in parsed_data.items()}
+    times_tests = {key: [value, key] for key, value in folder_data.items()}
     times_tests = replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16)
 
     # Определяем количество функций
-    num_functions = len(reference_data)
+    num_functions = len(swap_16)
 
     # Выполняем оптимизацию
     similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
@@ -325,24 +384,54 @@ def solve_for_all_references(base_directory, max_tests):
     :param base_directory: Базовая директория поиска.
     :param max_tests: Максимальное количество тестов для оптимизации.
     """
+    """
+    Ключ: Имя папки уровня <x> (например, "x1", "x2").
+    Значение: Словарь, где:
+        Ключ: Путь к файлу (например, "/path/to/reference.histo").
+        Значение: Словарь, где:
+            Ключ: Функция (например, "0x1a2b").
+            Значение: Процентное значение функции (вещественное число).
+    """
+    if not os.path.exists(base_directory):
+        raise FileNotFoundError(f"The specified folder '{base_directory}' does not exist.")
     # Находим все файлы reference.histo
     parsed_data = find_and_process_files(base_directory)
-    reference_keys = [key for key in parsed_data if "reference.histo" in key]
+    no_keys = True
+    # Перебираем ключи <x>
+    for folder_key, folder_data in parsed_data.items():
+        reference_keys = [key for key in folder_data if "reference.histo" in key]
 
-    if not reference_keys:
-        print("No reference.histo files found.")
-        return
+        # Обрабатываем каждый reference.histo отдельно
+        for reference_key in reference_keys:
+            process_reference(reference_key, parsed_data, base_directory, max_tests)
+            no_keys = False
 
-    # Обрабатываем каждый reference.histo отдельно
-    for reference_key in reference_keys:
-        process_reference(reference_key, parsed_data.copy(), base_directory, max_tests)
+    if no_keys:
+        print(f"No reference.histo files found in {base_directory}.")
 
+#вместо --folder просто папка написана в конце параметров
+def main():
+    parser = argparse.ArgumentParser(description="Скрипт максимальное кол-во тестов")
 
-# Пример использования
+    # Добавляем аргументы
+
+    parser.add_argument("--max-tests", type=int, default=100, help="Максимальное количество тестов (по умолчанию 100)")
+    parser.add_argument("--min-similarity", type=int, default=0, help="Минимальная схожесть (по умолчанию 0)")
+    parser.add_argument("folder", type=str, help="Папка где хранятся наши тесты")
+    # Парсим аргументы
+    args = parser.parse_args()
+
+    print(f"Folder path: {args.folder}")
+    print(f"Maximum number of tests: {args.max_tests}")
+    print(f"Minimum similarity: {args.min_similarity}")
+    try:
+        solve_for_all_references(args.folder, args.max_tests)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 if __name__ == "__main__":
-    # Укажите базовую директорию поиска
-    base_directory = "./test_folder"
-    max_tests = 4  # Максимальное количество тестов для оптимизации
+    main()
 
-    # Запуск обработки всех референсов
-    solve_for_all_references(base_directory, max_tests)
+
