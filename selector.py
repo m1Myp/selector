@@ -256,6 +256,10 @@ def optimize_tests(times_tests, target_function, num_tests, num_functions, max_s
         # Выбираем тесты
         selected_tests = [test_indices[i] for i in range(num_tests) if w.value[i] > 0]
 
+        for i in range(len(times_tests)):
+            print(f"{test_indices[i]} -> {w.value[i]}")
+        print(f"ILP similarity {overall_similarity}")
+
         return overall_similarity, selected_tests
     else:
         return None, None
