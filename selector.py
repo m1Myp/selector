@@ -205,6 +205,115 @@ def find_and_process_files(base_dir):
     return results
 
 
+def optimize_tests(times_tests, target_function, num_tests, num_functions, max_sum_w):
+    # Создание массивов s_i для всех тестов
+    s_list = []
+    test_indices = list(times_tests.keys())  # Получаем список имен тестов
+    for test in times_tests:
+        funcs = times_tests[test][0]
+        s_i = np.zeros(num_functions)
+        for func, value in funcs.items():
+            func_index = int(func)  # Используем числовое значение как индекс
+            s_i[func_index] = value
+        s_list.append(s_i)
+    s_list = np.array(s_list)
+
+    # Преобразование целевой функции в массив T
+    T = np.zeros(num_functions)
+    for func, value in target_function.items():
+        func_index = int(func)  # Используем числовое значение как индекс
+        T[func_index] = value
+
+    # Определение переменных
+    w = cp.Variable(num_tests, integer=True)
+
+    # Определяем ограничения
+    constraints = [
+        cp.sum(w) == max_sum_w,  # Ограничение: сумма всех тестов должна быть не больше max_sum_w
+        w >= 0,
+        w <= max_sum_w
+    ]
+
+    # Определение целевой функции: минимизация суммы отклонений от T
+    objective = cp.Minimize(
+        cp.sum(cp.abs(cp.matmul(w, s_list) / max_sum_w - T))
+    )
+
+    # Определяем проблему и решаем
+    problem = cp.Problem(objective, constraints)
+    problem.solve(solver=cp.CBC)
+
+    # Выводим результаты
+    if problem.status == cp.OPTIMAL or problem.status == cp.OPTIMAL_INACCURATE:
+        # Нормализуем получившуюся функцию
+        result_function = cp.matmul(w, s_list).value
+        normalized_function = (result_function / np.sum(result_function)) * 100
+
+        # Вычисляем метрику схожести
+        min_sums = np.minimum(normalized_function, T)
+        overall_similarity = np.sum(min_sums)
+
+        # Выбираем тесты
+        selected_tests = [test_indices[i] for i in range(num_tests) if w.value[i] > 0]
+
+        return overall_similarity, selected_tests
+    else:
+        return None, None
+
+
+def optimize_tests_continuous_selected(times_tests, target_function, selected_tests, num_functions, max_sum_w):
+    # Создание массивов s_i для всех тестов
+    s_list = []
+    test_indices = selected_tests
+    for test in selected_tests:
+        funcs = times_tests[test][0]
+        s_i = np.zeros(num_functions)
+        for func, value in funcs.items():
+            func_index = int(func)   # Используем числовое значение как индекс
+            s_i[func_index] = value
+        s_list.append(s_i)
+
+    s_list = np.array(s_list)
+
+    # Преобразование целевой функции в массив T
+    T = np.zeros(num_functions)
+    for func, value in target_function.items():
+        func_index = int(func)  # Используем числовое значение как индекс
+        T[func_index] = value
+
+    # Определение переменных
+    w = cp.Variable(len(selected_tests))
+
+    # Определяем ограничения
+    constraints = [w >= 0, cp.sum(w) == 1]
+
+    # Определение целевой функции: минимизация суммы отклонений от T
+    objective = cp.Minimize(
+        cp.sum(cp.abs(cp.matmul(w, s_list) - T))
+    )
+
+    # Определяем проблему и решаем
+    problem = cp.Problem(objective, constraints)
+    problem.solve()
+
+    # Выводим результаты
+    if problem.status == cp.OPTIMAL or problem.status == cp.OPTIMAL_INACCURATE:
+        # Нормализуем получившуюся функцию
+        result_function = cp.matmul(w, s_list).value
+        normalized_function = (result_function / np.sum(result_function)) * 100
+
+        # Вычисляем метрику схожести
+        min_sums = np.minimum(normalized_function, T)
+        overall_similarity = np.sum(min_sums)
+
+        result_weight = {}
+        for i in range(len(selected_tests)):
+            result_weight[test_indices[i]] = w.value[i]
+
+        return overall_similarity, result_weight
+    else:
+        return None, None
+
 def optimize_tests_continuous(times_tests, target_function, num_functions, max_sum_w):
     """
     Оптимизирует веса тестов для создания функции, максимально приближенной к таргетной гистограмме.
@@ -216,7 +325,7 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
         funcs = times_tests[test][0]
         s_i = np.zeros(num_functions)
         for func, value in funcs.items():
-            func_index = int(func) # Используем числовое значение как индекс
+            func_index = int(func)  # Используем числовое значение как индекс
             s_i[func_index] = value
         s_list.append(s_i)
     s_list = np.array(s_list)
@@ -224,7 +333,7 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
     # Преобразование целевой функции в массив T
     T = np.zeros(num_functions)
     for func, value in target_function.items():
-        func_index = int(func) # Используем числовое значение как индекс
+        func_index = int(func)  # Используем числовое значение как индекс
         T[func_index] = value
 
     # Определение переменных
@@ -327,7 +436,7 @@ def replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16):
 
     return updated_times_tests
 
-def process_reference(reference_key, parsed_data, base_directory, max_tests):
+def process_reference(reference_key, parsed_data, base_directory, max_tests, flag_zlp_cont):
     """
     Обрабатывает оптимизацию и копирование данных для указанного референсного файла.
     :param reference_key: Путь к референсному файлу.
@@ -336,7 +445,8 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests):
     :param max_tests: Максимальное количество тестов для оптимизации.
     """
     # Извлекаем уровень <x> и данные для этого ключа
-    folder_key = os.path.dirname(reference_key).split(os.sep)[-2]  # Получаем <x> из пути
+    folder_key = os.path.dirname(reference_key).split(os.sep)[-2] # Получаем <x> из пути
+    print(folder_key)
     folder_data = parsed_data[folder_key]
 
     # Создаем отображение hex -> числовой индекс
@@ -361,9 +471,15 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests):
 
     # Определяем количество функций
     num_functions = len(swap_16)
-
     # Выполняем оптимизацию
-    similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
+    if(flag_zlp_cont):
+        zlp_similarity, selected_tests = optimize_tests(times_tests, reference_data, num_tests=len(times_tests),
+                                                        num_functions=num_functions, max_sum_w=max_tests)
+        similarity, weights = optimize_tests_continuous_selected(times_tests, reference_data,
+                                                                      selected_tests=selected_tests,
+                                                                      num_functions=num_functions, max_sum_w=max_tests)
+    else:
+        similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
 
     # Выполняем копирование файлов
     create_selected_folder_and_copy_files(times_tests, reference_key, weights, base_directory)
@@ -378,7 +494,7 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests):
         print("Optimization problem could not be solved.")
 
 
-def solve_for_all_references(base_directory, max_tests):
+def solve_for_all_references(base_directory, max_tests, flag_zlp_cont):
     """
     Находит все референсы и обрабатывает их по очереди.
     :param base_directory: Базовая директория поиска.
@@ -403,20 +519,19 @@ def solve_for_all_references(base_directory, max_tests):
 
         # Обрабатываем каждый reference.histo отдельно
         for reference_key in reference_keys:
-            process_reference(reference_key, parsed_data, base_directory, max_tests)
+            process_reference(reference_key, parsed_data, base_directory, max_tests, flag_zlp_cont)
             no_keys = False
 
     if no_keys:
         print(f"No reference.histo files found in {base_directory}.")
 
-#вместо --folder просто папка написана в конце параметров
 def main():
     parser = argparse.ArgumentParser(description="Скрипт максимальное кол-во тестов")
 
     # Добавляем аргументы
-
     parser.add_argument("--max-tests", type=int, default=100, help="Максимальное количество тестов (по умолчанию 100)")
     parser.add_argument("--min-similarity", type=int, default=0, help="Минимальная схожесть (по умолчанию 0)")
+    parser.add_argument("--flag-zlp-cont", type=int, default=0, help="Включить ЦЛП+ЗЛП(по умолчанию 0(бинарное))")
     parser.add_argument("folder", type=str, help="Папка где хранятся наши тесты")
     # Парсим аргументы
     args = parser.parse_args()
@@ -424,8 +539,10 @@ def main():
     print(f"Folder path: {args.folder}")
     print(f"Maximum number of tests: {args.max_tests}")
     print(f"Minimum similarity: {args.min_similarity}")
+    print(f"Flag zlp+cont: {args.flag_zlp_cont}")
+
     try:
-        solve_for_all_references(args.folder, args.max_tests)
+        solve_for_all_references(args.folder, args.max_tests, args.flag_zlp_cont)
     except FileNotFoundError as e:
         print(f"Error: {e}")
     except Exception as e:
@@ -434,4 +551,57 @@ def main():
 if __name__ == "__main__":
     main()
 
+
+"""
+В гистограммах есть совпадающие числа, по разным адресам, одни и те же числа
+Можно делить на блоки. 
+
+    0x80000428              3
+    0x80000464              3
+    0x80000468              3
+    0x8000046a              3
+    СУЩНОСТЬ А (3)
+    0xffffffff80003c10      20
+    0xffffffff80003c12      20
+    0xffffffff80003c14      20
+    0xffffffff80003c16      20
+    СУЩНОСТЬ Б (20)
+    Последовательность можно заменить на другие сущности
+    Сделать из трейсов сущности в виде блоков
+
+    trace1
+    0xffffffff80003c12      20
+    0xffffffff80003c14      20
+    0xffffffff80003c16      20
+
+    trace2
+    0x80000428              3
+    0x80000464              3
+    0x80000468              3
+
+    Следующая двойстсвенная задача - 
+    0x80000428-468          3
+    0x8000046a              3
+    0xffffffff80003c10      20
+    0xffffffff80003c12-16   20
+
+    trace1
+    0xffffffff80003c12-16   20
+
+    trace2
+    0x80000428-468          3
+
+    Блок если есть полностью в трейсе, либо нет совсем.
+    Ориг файл, пока число такое-же - формирую блок (появляется некоторый блок) Потом смотрим в другом этот блок или хотя бы точка внутри него
+    Пока числа такие-же - один блок (может получится подмножество). Прогоняем через все трейсы. Блок который представлен одинаковым.
+    В отдельный файлик препроцессинга.
+
+    Мин симиларити просто перебор по кол-ву тестов (или бин поиском - лучше бин поиском)
+    
+    ЦЛП+ЗЛП
+    
+    Есть filepath можно хранить, как folder
+    
+    Добавить обозначение типов для того чтобы было человекочитаемо
+"""
 
