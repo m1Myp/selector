@@ -3,18 +3,17 @@ import shutil
 import numpy as np
 import cvxpy as cp
 import argparse
+from typing import Dict, List
 
-def create_selected_folder_and_copy_files(times_tests, reference_file_path, weights, base_directory):
+
+def create_selected_folder_and_copy_files(
+    reference_file_path: str,
+    weights: Dict[str, float],
+    base_directory: str
+):
     """
     Создает папку test_folder_selected вне base_directory, копирует выбранные тесты с новыми именами,
     сохраняет reference.histo и весовой файл в compare_input рядом с первым тестом.
-    :param times_tests: Словарь тестов, содержащий пути и данные
-                        Ключ: Имя теста (например, "test1", "test2").
-                        Значение: Список из двух элементов:
-                            1)  Словарь, где:
-                                    Ключ: Числовой индекс функции (например, "0", "1").
-                                    Значение: Процентное значение функции в гистограмме (вещественное число).
-                            2)  Строка, представляющая путь к файлу (например, путь к trace.histo).
     :param reference_file_path: Путь к референсному файлу.
     :param weights: Словарь с весами для каждого теста.
                     Ключ: Имя теста (например, "test1", "test2").
@@ -33,7 +32,7 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
 
     for test, weight in weights.items():
         if weight > 0:  # Обрабатываем только тесты с ненулевыми весами
-            test_file_path = times_tests[test][1]  # Путь к файлу trace.histo
+            test_file_path = test  # Путь к файлу trace.histop
 
             # Получаем путь до директории теста
             test_dir_path = os.path.dirname(os.path.dirname(test_file_path))
@@ -47,7 +46,7 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
 
             # Определяем новый путь для переноса
             original_test_folder = path_parts[1]  # Исходное имя папки после <x>
-            path_parts[1] = f"test_{test_number}"  # Переименовываем test_1, test_2 и т.д.
+            path_parts[1] = f"trace_{test_number:02d}"  # Переименовываем в trace_01, trace_02 и т.д.
             new_test_dir_path = os.path.join(selected_folder, os.path.join(*path_parts))
 
             # Копируем всю директорию теста
@@ -56,7 +55,7 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
 
             print(f"Copied folder '{original_test_folder}' to '{os.path.basename(new_test_dir_path)}'.")
 
-            # Устанавливаем папку compare_input рядом с test_1
+            # Устанавливаем папку compare_input рядом с trace_01
             if test_number == 1:
                 compare_input_folder = os.path.join(selected_folder, path_parts[0], "compare_input")
                 if not os.path.exists(compare_input_folder):
@@ -72,8 +71,8 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
 
         print(f"Copied reference file to '{new_reference_path}'.")
 
-        # Записываем веса в файл weight.txt в папке compare_input
-        weights_file_path = os.path.join(compare_input_folder, "weight.txt")
+        # Записываем веса в файл weights в папке compare_input
+        weights_file_path = os.path.join(compare_input_folder, "weights")
         with open(weights_file_path, "w") as f:
             for test, weight in weights.items():
                 if weight > 0:
@@ -84,19 +83,13 @@ def create_selected_folder_and_copy_files(times_tests, reference_file_path, weig
     print(f"Selected tests and their content have been copied to '{selected_folder}'.")
 
 
-
-def create_reference_mapping(reference_file):
+def create_reference_mapping(reference_file: str) -> Dict[str, int]:
     """
     Создает отображение 16-ричных значений функции на их индексы из референсного файла.
     Индекс соответствует первой встреченной позиции функции, начиная с 0.
     Игнорируются строки с комментариями.
     :param reference_file: Путь к референсному файлу (например, compare_input/reference.histo).
     :return: Словарь с 16-ричными значениями как ключами и их позициями как значениями.
-    """
-    """
-    Ключ: 16-ричное значение функции (например, "0x1a2b").
-    Значение: Индекс этой функции (целое число, начиная с 0), 
-              который соответствует порядку её первой встречи в референсном файле.
     """
     reference_mapping = {}
     real_index = 0  # Индекс, который будет отслеживать строку без учета комментариев
@@ -109,31 +102,34 @@ def create_reference_mapping(reference_file):
                 if not line or line.startswith("#"):
                     continue  # Пропускаем пустые строки и комментарии
 
-                # Разбираем строку
-                parts = line.split()
-                if len(parts) == 2 and parts[1].isdigit():
-                    function_name = parts[0]
-                    # Если функция еще не встречалась, сохраняем её реальный индекс
-                    if function_name not in reference_mapping:
-                        reference_mapping[function_name] = real_index
+                # Разбираем строку и берем только первые два токена
+                parts = line.split(maxsplit=2)  # Ограничиваем разбиение на два токена
+                if len(parts) >= 2:
+                    try:
+                        function_name = parts[0]
+                        int(parts[1])  # Проверяем, что второй токен можно преобразовать в число
 
-                    # Увеличиваем индекс только для строк, которые не являются комментариями
-                    real_index += 1
+                        # Если функция еще не встречалась, сохраняем её реальный индекс
+                        if function_name not in reference_mapping:
+                            reference_mapping[function_name] = real_index
+
+                        # Увеличиваем индекс только для строк, которые не являются комментариями
+                        real_index += 1
+                    except ValueError:
+                        print(f"Skipping invalid number in file '{reference_file}' at line {line_num}: {line}")
                 else:
-                    # Если строка некорректна, выбрасываем исключение с указанием строки
-                    raise ValueError(
-                        f"Invalid line in the reference file '{reference_file}' at line {line_num}: {line}"
-                    )
+                    # Если строка не содержит двух токенов, пропускаем её
+                    print(f"Skipping invalid line in file '{reference_file}' at line {line_num}: {line}")
     except Exception as e:
         print(f"Error reading the reference file {reference_file}: {e}")
     return reference_mapping
 
 
 
-def parse_file(file_path):
+def parse_file(file_path: str) -> Dict[str, float]:
     """
     Парсит файл и возвращает словарь с функциями и их процентными значениями.
-    Выбрасывает исключение, если в файле есть некорректные строки.
+    Игнорирует некорректные строки, извлекая только первые два токена.
     :param file_path: Путь к файлу.
     :return: Словарь {функция: процентное значение}.
     """
@@ -147,15 +143,18 @@ def parse_file(file_path):
                 if not line or line.startswith("#"):
                     continue
 
-                # Разбираем строку: ожидается формат "<function> <number>"
+                # Разбираем строку и извлекаем первые два токена
                 parts = line.split()
-                if len(parts) == 2 and parts[1].isdigit():
-                    function_name = parts[0]
-                    number = int(parts[1])
-                    data.append((function_name, number))
+                if len(parts) >= 2:
+                    try:
+                        function_name = parts[0]
+                        number = int(parts[1])  # Пытаемся преобразовать второй токен в число
+                        data.append((function_name, number))
+                    except ValueError:
+                        print(f"Invalid number format in file '{file_path}' at line {line_num}: {line}")
+                        continue
                 else:
-                    # Если строка некорректна, выбрасываем исключение с указанием строки
-                    raise ValueError(f"Invalid line in the file '{file_path}' at line {line_num}: {line}")
+                    print(f"Skipping invalid line in file '{file_path}' at line {line_num}: {line}")
 
             # Рассчитываем процентное соотношение
             total = sum(val for _, val in data)
@@ -166,9 +165,9 @@ def parse_file(file_path):
     return result
 
 
-def find_and_process_files(base_dir):
+def find_and_process_files(base_dir: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     """
-    Обходит папки внутри указанной директории, ищет файлы reference.histo и trace.histo,
+    Обходит папки внутри указанной директории, ищет файлы reference.histop и trace.histop,
     и заполняет словарь словарей с дополнительным ключом <x>.
     :param base_dir: Базовая директория для поиска.
     :return: Словарь словарей {<x>: {путь файла: {функция: процентное значение}}}.
@@ -183,142 +182,37 @@ def find_and_process_files(base_dir):
         if top_level_folder not in results:
             results[top_level_folder] = {}
 
-        # Проверяем наличие reference.histo
-        reference_file = os.path.join(root, "compare_input", "reference.histo")
+        # Проверяем наличие reference.histop
+        reference_file = os.path.join(root, "compare_input", "reference.histop")
         if os.path.exists(reference_file):
-            print(f"Found reference.histo: {reference_file}")
+            print(f"Found reference.histop: {reference_file}")
 
-            # Парсим reference.histo и добавляем в словарь
+            # Парсим reference.histop и добавляем в словарь
             parsed_reference = parse_file(reference_file)
             results[top_level_folder][reference_file] = parsed_reference
 
-            # Ищем все trace.histo в подпапках
+            # Ищем все trace.histop на глубине 2
             for sub_dir in dirs:
-                trace_file_path = os.path.join(root, sub_dir, "mode", "trace.histo")
-                if os.path.exists(trace_file_path):
-                    print(f"Found trace.histo: {trace_file_path}")
+                trace_dir_path = os.path.join(root, sub_dir)
+                if os.path.isdir(trace_dir_path):  # Проверяем, что это директория
+                    # Ищем во втором уровне вложенности
+                    for sub_sub_dir in os.listdir(trace_dir_path):
+                        sub_sub_dir_path = os.path.join(trace_dir_path, sub_sub_dir)
+                        if os.path.isdir(sub_sub_dir_path):
+                            # Ищем trace.histop в подкаталоге второго уровня
+                            trace_file_path = os.path.join(sub_sub_dir_path, "trace.histop")
+                            if os.path.exists(trace_file_path):
+                                print(f"Found trace.histop: {trace_file_path}")
 
-                    # Парсим trace.histo и добавляем в словарь
-                    parsed_trace = parse_file(trace_file_path)
-                    results[top_level_folder][trace_file_path] = parsed_trace
+                                # Парсим trace.histop и добавляем в словарь
+                                parsed_trace = parse_file(trace_file_path)
+                                results[top_level_folder][trace_file_path] = parsed_trace
 
     return results
 
 
-def optimize_tests(times_tests, target_function, num_tests, num_functions, max_sum_w):
-    # Создание массивов s_i для всех тестов
-    s_list = []
-    test_indices = list(times_tests.keys())  # Получаем список имен тестов
-    for test in times_tests:
-        funcs = times_tests[test][0]
-        s_i = np.zeros(num_functions)
-        for func, value in funcs.items():
-            func_index = int(func)  # Используем числовое значение как индекс
-            s_i[func_index] = value
-        s_list.append(s_i)
-    s_list = np.array(s_list)
 
-    # Преобразование целевой функции в массив T
-    T = np.zeros(num_functions)
-    for func, value in target_function.items():
-        func_index = int(func)  # Используем числовое значение как индекс
-        T[func_index] = value
-
-    # Определение переменных
-    w = cp.Variable(num_tests, integer=True)
-
-    # Определяем ограничения
-    constraints = [
-        cp.sum(w) == max_sum_w,  # Ограничение: сумма всех тестов должна быть не больше max_sum_w
-        w >= 0,
-        w <= max_sum_w
-    ]
-
-    # Определение целевой функции: минимизация суммы отклонений от T
-    objective = cp.Minimize(
-        cp.sum(cp.abs(cp.matmul(w, s_list) / max_sum_w - T))
-    )
-
-    # Определяем проблему и решаем
-    problem = cp.Problem(objective, constraints)
-    problem.solve(solver=cp.CBC)
-
-    # Выводим результаты
-    if problem.status == cp.OPTIMAL or problem.status == cp.OPTIMAL_INACCURATE:
-        # Нормализуем получившуюся функцию
-        result_function = cp.matmul(w, s_list).value
-        normalized_function = (result_function / np.sum(result_function)) * 100
-
-        # Вычисляем метрику схожести
-        min_sums = np.minimum(normalized_function, T)
-        overall_similarity = np.sum(min_sums)
-
-        # Выбираем тесты
-        selected_tests = [test_indices[i] for i in range(num_tests) if w.value[i] > 0]
-
-        for i in range(len(times_tests)):
-            print(f"{test_indices[i]} -> {w.value[i]}")
-        print(f"ILP similarity {overall_similarity}")
-
-        return overall_similarity, selected_tests
-    else:
-        return None, None
-
-
-def optimize_tests_continuous_selected(times_tests, target_function, selected_tests, num_functions, max_sum_w):
-    # Создание массивов s_i для всех тестов
-    s_list = []
-    test_indices = selected_tests
-    for test in selected_tests:
-        funcs = times_tests[test][0]
-        s_i = np.zeros(num_functions)
-        for func, value in funcs.items():
-            func_index = int(func)   # Используем числовое значение как индекс
-            s_i[func_index] = value
-        s_list.append(s_i)
-
-    s_list = np.array(s_list)
-
-    # Преобразование целевой функции в массив T
-    T = np.zeros(num_functions)
-    for func, value in target_function.items():
-        func_index = int(func)  # Используем числовое значение как индекс
-        T[func_index] = value
-
-    # Определение переменных
-    w = cp.Variable(len(selected_tests))
-
-    # Определяем ограничения
-    constraints = [w >= 0, cp.sum(w) == 1]
-
-    # Определение целевой функции: минимизация суммы отклонений от T
-    objective = cp.Minimize(
-        cp.sum(cp.abs(cp.matmul(w, s_list) - T))
-    )
-
-    # Определяем проблему и решаем
-    problem = cp.Problem(objective, constraints)
-    problem.solve()
-
-    # Выводим результаты
-    if problem.status == cp.OPTIMAL or problem.status == cp.OPTIMAL_INACCURATE:
-        # Нормализуем получившуюся функцию
-        result_function = cp.matmul(w, s_list).value
-        normalized_function = (result_function / np.sum(result_function)) * 100
-
-        # Вычисляем метрику схожести
-        min_sums = np.minimum(normalized_function, T)
-        overall_similarity = np.sum(min_sums)
-
-        result_weight = {}
-        for i in range(len(selected_tests)):
-            result_weight[test_indices[i]] = w.value[i]
-
-        return overall_similarity, result_weight
-    else:
-        return None, None
-
-def optimize_tests_continuous(times_tests, target_function, num_functions, max_sum_w):
+def optimize_tests_continuous(times_tests: dict, target_function: dict, num_functions: int, max_sum_w: int) -> tuple:
     """
     Оптимизирует веса тестов для создания функции, максимально приближенной к таргетной гистограмме.
     """
@@ -335,10 +229,10 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
     s_list = np.array(s_list)
     print(s_list)
     # Преобразование целевой функции в массив T
-    T = np.zeros(num_functions)
+    t = np.zeros(num_functions)
     for func, value in target_function.items():
         func_index = int(func)  # Используем числовое значение как индекс
-        T[func_index] = value
+        t[func_index] = value
 
     # Определение переменных
     w = cp.Variable(len(times_tests))
@@ -354,7 +248,7 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
 
     # Определяем целевую функцию
     objective = cp.Minimize(
-        cp.sum(cp.abs(cp.matmul(w, s_list) - T))  # Минимизация отклонений от целевой функции
+        cp.sum(cp.abs(cp.matmul(w, s_list) - t))  # Минимизация отклонений от целевой функции
     )
 
     # Проблема и решение
@@ -372,8 +266,8 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
             normalized_function = np.zeros_like(result_function)
 
         # Вычисление метрики схожести
-        min_sums = np.minimum(normalized_function, T)
-        print(min_sums, normalized_function, T)
+        min_sums = np.minimum(normalized_function, t)
+        print(min_sums, normalized_function, t)
         overall_similarity = np.sum(min_sums)
 
         # Сохранение веса каждого теста
@@ -390,7 +284,8 @@ def optimize_tests_continuous(times_tests, target_function, num_functions, max_s
         print("Optimization failed.")
         return None, None
 
-def replace_hex_keys_with_numerical(reference_data, swap_16):
+
+def replace_hex_keys_with_numerical(reference_data: dict, swap_16: dict) -> dict:
     """
     Заменяет 16-ричные ключи на численные индексы.
     :param reference_data: Словарь, где ключи - 16-ричные значения.
@@ -402,7 +297,8 @@ def replace_hex_keys_with_numerical(reference_data, swap_16):
         for key, value in reference_data.items()
     }
 
-def replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16):
+
+def replace_hex_keys_with_numerical_in_times_tests(times_tests: dict, swap_16: dict) -> dict:
     """
     Заменяет все 16-ричные ключи на численные для всех элементов в словаре times_tests.
     Если ключ отсутствует в swap_16, добавляет его и приписывает новый порядковый номер.
@@ -440,7 +336,8 @@ def replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16):
 
     return updated_times_tests
 
-def process_reference(reference_key, parsed_data, base_directory, max_tests, flag_zlp_cont):
+
+def process_reference(reference_key: str, parsed_data: dict, base_directory: str, max_tests: int):
     """
     Обрабатывает оптимизацию и копирование данных для указанного референсного файла.
     :param reference_key: Путь к референсному файлу.
@@ -449,7 +346,7 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests, fla
     :param max_tests: Максимальное количество тестов для оптимизации.
     """
     # Извлекаем уровень <x> и данные для этого ключа
-    folder_key = os.path.dirname(reference_key).split(os.sep)[-2] # Получаем <x> из пути
+    folder_key = os.path.dirname(reference_key).split(os.sep)[-2]  # Получаем <x> из пути
     print(folder_key)
     folder_data = parsed_data[folder_key]
 
@@ -476,17 +373,10 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests, fla
     # Определяем количество функций
     num_functions = len(swap_16)
     # Выполняем оптимизацию
-    if(flag_zlp_cont):
-        zlp_similarity, selected_tests = optimize_tests(times_tests, reference_data, num_tests=len(times_tests),
-                                                        num_functions=num_functions, max_sum_w=max_tests)
-        similarity, weights = optimize_tests_continuous_selected(times_tests, reference_data,
-                                                                      selected_tests=selected_tests,
-                                                                      num_functions=num_functions, max_sum_w=max_tests)
-    else:
-        similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
+    similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
 
     # Выполняем копирование файлов
-    create_selected_folder_and_copy_files(times_tests, reference_key, weights, base_directory)
+    create_selected_folder_and_copy_files(reference_key, weights, base_directory)
 
     # Вывод результата
     print(f"\n--- Results for {reference_key} ---")
@@ -498,7 +388,7 @@ def process_reference(reference_key, parsed_data, base_directory, max_tests, fla
         print("Optimization problem could not be solved.")
 
 
-def solve_for_all_references(base_directory, max_tests, flag_zlp_cont):
+def solve_for_all_references(base_directory: str, max_tests: int):
     """
     Находит все референсы и обрабатывает их по очереди.
     :param base_directory: Базовая директория поиска.
@@ -523,11 +413,12 @@ def solve_for_all_references(base_directory, max_tests, flag_zlp_cont):
 
         # Обрабатываем каждый reference.histo отдельно
         for reference_key in reference_keys:
-            process_reference(reference_key, parsed_data, base_directory, max_tests, flag_zlp_cont)
+            process_reference(reference_key, parsed_data, base_directory, max_tests)
             no_keys = False
 
     if no_keys:
         print(f"No reference.histo files found in {base_directory}.")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Скрипт максимальное кол-во тестов")
@@ -535,7 +426,6 @@ def main():
     # Добавляем аргументы
     parser.add_argument("--max-tests", type=int, default=100, help="Максимальное количество тестов (по умолчанию 100)")
     parser.add_argument("--min-similarity", type=int, default=0, help="Минимальная схожесть (по умолчанию 0)")
-    parser.add_argument("--flag-zlp-cont", type=int, default=0, help="Включить ЦЛП+ЗЛП(по умолчанию 0(бинарное))")
     parser.add_argument("folder", type=str, help="Папка где хранятся наши тесты")
     # Парсим аргументы
     args = parser.parse_args()
@@ -543,69 +433,16 @@ def main():
     print(f"Folder path: {args.folder}")
     print(f"Maximum number of tests: {args.max_tests}")
     print(f"Minimum similarity: {args.min_similarity}")
-    print(f"Flag zlp+cont: {args.flag_zlp_cont}")
 
     try:
-        solve_for_all_references(args.folder, args.max_tests, args.flag_zlp_cont)
+        solve_for_all_references(args.folder, args.max_tests)
     except FileNotFoundError as e:
         print(f"Error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+
 if __name__ == "__main__":
     main()
 
-
-"""
-В гистограммах есть совпадающие числа, по разным адресам, одни и те же числа
-Можно делить на блоки. 
-
-    0x80000428              3
-    0x80000464              3
-    0x80000468              3
-    0x8000046a              3
-    СУЩНОСТЬ А (3)
-    0xffffffff80003c10      20
-    0xffffffff80003c12      20
-    0xffffffff80003c14      20
-    0xffffffff80003c16      20
-    СУЩНОСТЬ Б (20)
-    Последовательность можно заменить на другие сущности
-    Сделать из трейсов сущности в виде блоков
-
-    trace1
-    0xffffffff80003c12      20
-    0xffffffff80003c14      20
-    0xffffffff80003c16      20
-
-    trace2
-    0x80000428              3
-    0x80000464              3
-    0x80000468              3
-
-    Следующая двойстсвенная задача - 
-    0x80000428-468          3
-    0x8000046a              3
-    0xffffffff80003c10      20
-    0xffffffff80003c12-16   20
-
-    trace1
-    0xffffffff80003c12-16   20
-
-    trace2
-    0x80000428-468          3
-
-    Блок если есть полностью в трейсе, либо нет совсем.
-    Ориг файл, пока число такое-же - формирую блок (появляется некоторый блок) Потом смотрим в другом этот блок или хотя бы точка внутри него
-    Пока числа такие-же - один блок (может получится подмножество). Прогоняем через все трейсы. Блок который представлен одинаковым.
-    В отдельный файлик препроцессинга.
-
-    Мин симиларити просто перебор по кол-ву тестов (или бин поиском - лучше бин поиском)
-    
-    ЦЛП+ЗЛП
-    
-    Есть filepath можно хранить, как folder
-    
-    Добавить обозначение типов для того чтобы было человекочитаемо
-"""
 
