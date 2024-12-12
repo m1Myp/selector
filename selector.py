@@ -335,13 +335,14 @@ def replace_hex_keys_with_numerical_in_times_tests(times_tests: dict, swap_16: d
     return updated_times_tests
 
 
-def process_reference(reference_key: str, parsed_data: dict, base_directory: str, max_tests: int):
+def process_reference(reference_key: str, parsed_data: dict, base_directory: str, max_tests: int, min_similarity: int):
     """
     Обрабатывает оптимизацию и копирование данных для указанного референсного файла.
     :param reference_key: Путь к референсному файлу.
     :param parsed_data: Распарсенные данные из всех файлов, разделенные по <x>.
     :param base_directory: Базовая директория поиска.
     :param max_tests: Максимальное количество тестов для оптимизации.
+    :param min_similarity: Минимально требуемая схожесть
     """
     # Извлекаем уровень <x> и данные для этого ключа
     folder_key = os.path.dirname(reference_key).split(os.sep)[-2]  # Получаем <x> из пути
@@ -368,11 +369,45 @@ def process_reference(reference_key: str, parsed_data: dict, base_directory: str
     times_tests = {key: [value, key] for key, value in folder_data.items()}
     times_tests = replace_hex_keys_with_numerical_in_times_tests(times_tests, swap_16)
 
-    # Определяем количество функций
     num_functions = len(swap_16)
-    # Выполняем оптимизацию
-    similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
 
+    if min_similarity:
+        # Определение диапазона для бинарного поиска
+        min_tests = 1
+        max_tests = len(times_tests)  # Максимальное количество тестов (например, длина times_tests)
+
+        # Инициализация переменных для хранения результата
+        result_similarity = 0
+        result_weights = None
+
+        # Начинаем бинарный поиск
+        while min_tests <= max_tests:
+            # Вычисляем среднее значение для max_tests
+            mid_tests = (min_tests + max_tests) // 2
+
+            # Вызываем функцию оптимизации с количеством тестов = mid_tests
+            similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, mid_tests)
+
+            # Если похожесть больше или равна min_similarity, сохраняем результаты
+            if similarity >= min_similarity:
+                # Сохраняем текущие результаты
+                result_similarity = similarity
+                result_weights = weights
+                # Пытаемся уменьшить количество тестов, чтобы найти минимальное значение
+                max_tests = mid_tests - 1
+            else:
+                # Если похожесть меньше min_similarity, увеличиваем количество тестов
+                min_tests = mid_tests + 1
+
+        # После завершения бинарного поиска, result_similarity и result_weights содержат нужные значения
+        similarity = result_similarity
+        weights = result_weights
+    else:
+        # Выполняем оптимизацию
+        similarity, weights = optimize_tests_continuous(times_tests, reference_data, num_functions, max_tests)
+    # Проверяем, если similarity равно 0, выбрасываем исключение
+    if similarity == 0:
+        raise ValueError("Unable to achieve the required similarity value.")
     # Выполняем копирование файлов
     create_selected_folder_and_copy_files(reference_key, weights, base_directory)
 
@@ -386,11 +421,12 @@ def process_reference(reference_key: str, parsed_data: dict, base_directory: str
         print("Optimization problem could not be solved.")
 
 
-def solve_for_all_references(base_directory: str, max_tests: int):
+def solve_for_all_references(base_directory: str, max_tests: int, min_similarity: int):
     """
     Находит все референсы и обрабатывает их по очереди.
     :param base_directory: Базовая директория поиска.
     :param max_tests: Максимальное количество тестов для оптимизации.
+    :param min_similarity: Минимальная требуемая схожесть
     """
     """
     Ключ: Имя папки уровня <x> (например, "x1", "x2").
@@ -412,7 +448,7 @@ def solve_for_all_references(base_directory: str, max_tests: int):
 
         # Обрабатываем каждый reference.histo отдельно
         for reference_key in reference_keys:
-            process_reference(reference_key, parsed_data, base_directory, max_tests)
+            process_reference(reference_key, parsed_data, base_directory, max_tests, min_similarity)
             no_keys = False
 
     if no_keys:
@@ -434,7 +470,7 @@ def main():
     print(f"Minimum similarity: {args.min_similarity}")
 
     try:
-        solve_for_all_references(args.folder, args.max_tests)
+        solve_for_all_references(args.folder, args.max_tests, args.min_similarity)
     except FileNotFoundError as e:
         print(f"Error: {e}")
     except Exception as e:
