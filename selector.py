@@ -403,7 +403,8 @@ def solve_for_all_references(base_directory: str, max_tests: int):
     if not os.path.exists(base_directory):
         raise FileNotFoundError(f"The specified folder '{base_directory}' does not exist.")
     # Находим все файлы reference.histo
-    parsed_data = find_and_process_files(base_directory)
+    normalized_path = base_directory.replace('/', '\\')
+    parsed_data = find_and_process_files(normalized_path)
     no_keys = True
     # Перебираем ключи <x>
     for folder_key, folder_data in parsed_data.items():
