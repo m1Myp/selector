@@ -39,14 +39,9 @@ def create_selected_folder_and_copy_files(
             rel_path = os.path.relpath(test_dir_path, base_directory)
             path_parts = rel_path.split(os.sep)
 
-            # Проверяем длину path_parts
-            if len(path_parts) <= 1:
-                print(f"Skipping test '{test}' due to unexpected path structure: '{rel_path}'")
-                continue
-
             # Определяем новый путь для переноса
-            original_test_folder = path_parts[1]  # Исходное имя папки после <x>
-            path_parts[1] = f"trace_{test_number:02d}"  # Переименовываем в trace_01, trace_02 и т.д.
+            original_test_folder = path_parts[-1]  # Исходное имя папки после <x>
+            path_parts[-1] = f"trace_{test_number:02d}"  # Переименовываем в trace_01, trace_02 и т.д.
             new_test_dir_path = os.path.join(selected_folder, os.path.join(*path_parts))
 
             # Копируем всю директорию теста
@@ -57,7 +52,10 @@ def create_selected_folder_and_copy_files(
 
             # Устанавливаем папку compare_input рядом с trace_01
             if test_number == 1:
-                compare_input_folder = os.path.join(selected_folder, path_parts[0], "compare_input")
+                if len(path_parts) > 1:
+                    compare_input_folder = os.path.join(selected_folder, path_parts[0], "compare_input")
+                else:
+                    compare_input_folder = os.path.join(selected_folder, "compare_input")
                 if not os.path.exists(compare_input_folder):
                     os.makedirs(compare_input_folder)
 
