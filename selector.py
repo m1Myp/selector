@@ -54,7 +54,8 @@ def create_selected_folder_and_copy_files(
             # Устанавливаем папку compare_input рядом с trace_01
             if test_number == 1:
                 if len(path_parts) > 1:
-                    compare_input_folder = os.path.join(selected_folder, path_parts[0], "compare_input")
+                    path_without_last = "//".join(path_parts[:-1])
+                    compare_input_folder = os.path.join(selected_folder, path_without_last, "compare_input")
                 else:
                     compare_input_folder = os.path.join(selected_folder, "compare_input")
                 if not os.path.exists(compare_input_folder):
@@ -186,45 +187,44 @@ def parse_file(file_path: str) -> Dict[str, float]:
 def find_and_process_files(base_dir: str) -> Dict[str, Dict[str, Dict[str, float]]]:
     """
     Обходит папки внутри указанной директории, ищет файлы reference.histop и trace.histop,
-    и заполняет словарь словарей с дополнительным ключом <x>.
+    и заполняет словарь с дополнительным ключом <x>, где <x> — это папка, находящаяся на 2 уровня ниже
+    от найденного reference.histop.
     :param base_dir: Базовая директория для поиска.
-    :return: Словарь словарей {<x>: {путь файла: {функция: процентное значение}}}.
+    :return: Словарь с данными о reference.histop и trace.histop.
     """
     results = {}  # Основной словарь для хранения данных
 
     for root, dirs, files in os.walk(base_dir):
-        # Определяем текущую папку (уровень <x>)
-        relative_path = os.path.relpath(root, base_dir)
-        top_level_folder = relative_path.split(os.sep)[0] if relative_path != '.' else os.path.basename(base_dir)
-
-        if top_level_folder not in results:
-            results[top_level_folder] = {}
-
         # Проверяем наличие reference.histop
         reference_file = os.path.join(root, "compare_input", "reference.histop")
         if os.path.exists(reference_file):
-            print(f"Found reference.histop: {reference_file}")
+            # Получаем ключ из папки на 2 уровня ниже (например, '1')
+            relative_path = os.path.relpath(root, base_dir)
+            if relative_path != '.':
+                key = relative_path.split(os.sep)[-1]
+            else:
+                key = root.split(os.sep)[-1]
 
+            if key not in results:
+                results[key] = {}
+
+            print(f"Found reference.histop: {reference_file}")
             # Парсим reference.histop и добавляем в словарь
             parsed_reference = parse_file(reference_file)
-            results[top_level_folder][reference_file] = parsed_reference
+            results[key][reference_file] = parsed_reference
 
-            # Ищем все trace.histop на глубине 2
+            # Ищем все trace.histop в папках, находящихся на том же уровне, что и reference.histop
             for sub_dir in dirs:
                 trace_dir_path = os.path.join(root, sub_dir)
                 if os.path.isdir(trace_dir_path):  # Проверяем, что это директория
-                    # Ищем во втором уровне вложенности
                     for sub_sub_dir in os.listdir(trace_dir_path):
                         sub_sub_dir_path = os.path.join(trace_dir_path, sub_sub_dir)
-                        if os.path.isdir(sub_sub_dir_path):
-                            # Ищем trace.histop в подкаталоге второго уровня
-                            trace_file_path = os.path.join(sub_sub_dir_path, "trace.histop")
-                            if os.path.exists(trace_file_path):
-                                print(f"Found trace.histop: {trace_file_path}")
-
-                                # Парсим trace.histop и добавляем в словарь
-                                parsed_trace = parse_file(trace_file_path)
-                                results[top_level_folder][trace_file_path] = parsed_trace
+                        # Если папка содержит trace.histop, добавляем в результат
+                        trace_file_path = os.path.join(sub_sub_dir_path, "trace.histop")
+                        if os.path.exists(trace_file_path):
+                            print(f"Found trace.histop: {trace_file_path}")
+                            parsed_trace = parse_file(trace_file_path)
+                            results[key][trace_file_path] = parsed_trace
 
     return results
 
@@ -497,12 +497,8 @@ def main():
     print(f"Maximum number of tests: {args.max_tests}")
     print(f"Minimum similarity: {args.min_similarity}")
 
-    # Обрабатываем точку как текущую директорию
-    if args.folder == ".":
-        args.folder = os.getcwd()  # Получаем текущую рабочую директорию
-
     try:
-        solve_for_all_references(args.folder, args.max_tests, args.min_similarity)
+        solve_for_all_references(os.path.abspath(args.folder), args.max_tests, args.min_similarity)
     except FileNotFoundError as e:
         print(f"Error: {e}")
     except Exception as e:
@@ -511,3 +507,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""
+TODO
+
+Дериктория на вход. Лучше использовать сразу абсолютный путь. если передать . то он на уровень выше сделает ._selected или объект path
+и рядом с компеир инпут тоже нужно захватить То есть по факту переносим все на 2 уровня выше.
+Не переносить все что с трейсами.
+
+scp с 1 на 2. scp 
+Перенести и потереть на гейте.
+Запустить опенмесенджинг с него снять профиль и разложить в юнит тесты и предсказать изменения перфоманса нпример при изменении jvm.
+
+Ожидаемый скор в бенчмарке такой-то
+"""
