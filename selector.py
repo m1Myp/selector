@@ -115,7 +115,10 @@ def create_selected_folder_and_copy_files(
         # Вычисляем последний элемент
         if non_zero_weights:
             adjusted_last_weight = 1 - sum(non_zero_weights[:-1])  # Корректируем последний элемент
+            assert abs(adjusted_last_weight - non_zero_weights[-1]) <= 0.01, \
+                "The difference between the calculated and rounded value exceeds the allowed delta"
             non_zero_weights[-1] = round(adjusted_last_weight, 4)
+
         with open(weights_file_path, "w") as f:
             for weight in non_zero_weights:
                 f.write(f"{weight:.4f}\n")
