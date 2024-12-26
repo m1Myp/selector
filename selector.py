@@ -108,11 +108,17 @@ def create_selected_folder_and_copy_files(
 
         # Записываем веса в файл weights в папке compare_input
         weights_file_path = os.path.join(compare_input_folder, "weights")
+        non_zero_weights = []  # Создаем новый массив для ненулевых весов
+        for test, weight in weights.items():
+            if weight > 0:
+                non_zero_weights.append(round(weight, 4))
+        # Вычисляем последний элемент
+        if non_zero_weights:
+            adjusted_last_weight = 1 - sum(non_zero_weights[:-1])  # Корректируем последний элемент
+            non_zero_weights[-1] = round(adjusted_last_weight, 4)
         with open(weights_file_path, "w") as f:
-            for test, weight in weights.items():
-                if weight > 0:
-                    f.write(f"{weight:.4f}\n")
-
+            for weight in non_zero_weights:
+                f.write(f"{weight:.4f}\n")
         print(f"Weights file saved to '{weights_file_path}'.")
 
     print(f"Selected tests and their content have been copied to '{selected_folder}'.")
