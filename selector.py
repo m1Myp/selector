@@ -6,7 +6,6 @@ import argparse
 from typing import Dict, List
 import block_preprocessing as bp
 
-
 def create_selected_folder_and_copy_files(
         reference_file_path: str,
         weights: Dict[str, float],
@@ -65,29 +64,45 @@ def create_selected_folder_and_copy_files(
 
     # Копируем все файлы, которые находятся в папке, содержащей reference.histop
     if compare_input_folder:
-        # Получаем родительскую директорию для референсного файла
-        reference_file_dir = os.path.dirname(reference_file_path)
+        # Получаем старый путь для reference.histop
+        old_reference_file_dir = os.path.dirname(reference_file_path)
 
-        # Копируем все файлы и папки, находящиеся в этой директории
-        for item in os.listdir(reference_file_dir):
-            item_path = os.path.join(reference_file_dir, item)
+        # Поднимаемся на уровень вверх от старого пути
+        old_parent_reference_dir = os.path.dirname(old_reference_file_dir)
 
-            # Если это директория, копируем всю ее содержимое
+        # Получаем новый путь для reference.histop, куда он будет скопирован
+        new_reference_path = os.path.join(compare_input_folder, os.path.basename(reference_file_path))
+
+        # Поднимаемся на два уровня выше от нового пути для сравнения
+        new_parent_reference_dir = os.path.dirname(os.path.dirname(new_reference_path))
+
+        # Функция для проверки наличия trace.histop в любой вложенной папке
+        def contains_trace_histop(directory: str) -> bool:
+            for root, dirs, files in os.walk(directory):
+                if "trace.histop" in files:
+                    return True
+            return False
+
+        # Копируем все файлы и папки из старой родительской директории, если папка не содержит trace.histop
+        for item in os.listdir(old_parent_reference_dir):
+            item_path = os.path.join(old_parent_reference_dir, item)
+
+            # Если это директория, проверяем ее содержимое
             if os.path.isdir(item_path):
-                target_dir = os.path.join(compare_input_folder, item)
-                if not os.path.exists(target_dir):
-                    shutil.copytree(item_path, target_dir)
-                print(f"Copied directory '{item}' to '{target_dir}'.")
-
+                # Проверяем, не содержит ли папка или ее вложенные папки trace.histop
+                if not contains_trace_histop(item_path):
+                    # Если нет, копируем всю папку
+                    target_dir = os.path.join(new_parent_reference_dir, item)
+                    if not os.path.exists(target_dir):
+                        shutil.copytree(item_path, target_dir)
+                    print(f"Copied directory '{item}' to '{target_dir}'.")
             # Если это файл, копируем его
             elif os.path.isfile(item_path):
-                target_file_path = os.path.join(compare_input_folder, item)
+                target_file_path = os.path.join(new_parent_reference_dir, item)
                 shutil.copy2(item_path, target_file_path)
                 print(f"Copied file '{item}' to '{target_file_path}'.")
 
-        # Копируем референсный файл в папку compare_input
-        reference_file_name = os.path.basename(reference_file_path)
-        new_reference_path = os.path.join(compare_input_folder, reference_file_name)
+        # Копируем сам файл reference.histop в compare_input
         shutil.copy(reference_file_path, new_reference_path)
         print(f"Copied reference file to '{new_reference_path}'.")
 
