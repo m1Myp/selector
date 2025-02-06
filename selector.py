@@ -102,9 +102,18 @@ def create_selected_folder_and_copy_files(
                 shutil.copy2(item_path, target_file_path)
                 print(f"Copied file '{item}' to '{target_file_path}'.")
 
-        # Копируем сам файл reference.histop в compare_input
-        shutil.copy(reference_file_path, new_reference_path)
-        print(f"Copied reference file to '{new_reference_path}'.")
+        # Копируем всю папку compare_input в новое место
+        old_compare_input_folder = os.path.dirname(reference_file_path)
+        new_compare_input_folder = os.path.dirname(new_reference_path)
+
+        if os.path.exists(new_compare_input_folder):
+            # Если папка уже существует, удаляем ее
+            shutil.rmtree(new_compare_input_folder)
+            print(f"Existing folder '{new_compare_input_folder}' has been removed.")
+
+        # Копируем папку compare_input
+        shutil.copytree(old_compare_input_folder, new_compare_input_folder)
+        print(f"Copied folder 'compare_input' to '{new_compare_input_folder}'.")
 
         # Записываем веса в файл weights в папке compare_input
         weights_file_path = os.path.join(compare_input_folder, "weights")
@@ -492,8 +501,7 @@ def solve_for_all_references(base_directory: str, max_tests: int, min_similarity
     if not os.path.exists(base_directory):
         raise FileNotFoundError(f"The specified folder '{base_directory}' does not exist.")
     # Находим все файлы reference.histop
-    normalized_path = base_directory.replace('/', '\\')
-    parsed_data = find_and_process_files(normalized_path)
+    parsed_data = find_and_process_files(base_directory)
     no_keys = True
 
     # Перебираем ключи <x>
@@ -534,16 +542,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-"""
-TODO
-
-Дериктория на вход. Лучше использовать сразу абсолютный путь. если передать . то он на уровень выше сделает ._selected или объект path
-и рядом с компеир инпут тоже нужно захватить То есть по факту переносим все на 2 уровня выше.
-Не переносить все что с трейсами.
-
-scp с 1 на 2. scp 
-Перенести и потереть на гейте.
-Запустить опенмесенджинг с него снять профиль и разложить в юнит тесты и предсказать изменения перфоманса нпример при изменении jvm.
-
-Ожидаемый скор в бенчмарке такой-то
-"""
