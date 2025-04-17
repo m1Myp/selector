@@ -31,7 +31,7 @@ export REFERENCE_DIR=$RUN_DIR/compare_input/
 export SAMPLE_DIR=$RUN_DIR/
 export LOOKUP_MASK="*.jfr"
 export MIN_SIMILARITY=90
-export MAX_SELECTED_TRACES=
+export MAX_SELECTED_TRACES=5
 ```
 
 ### 3. Скачай нужные библиотеки
