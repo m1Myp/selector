@@ -5,104 +5,147 @@ import shutil
 import argparse
 import sys
 
-STAGES_DIR = os.path.join("stages", "stage1")
-REFERENCE_DIR = ""
-SAMPLE_DIR = ""
+
+# Ensures the "stages" directory is reset and ready for output
+# Deletes it if it exists and creates a new one
 
 
-def ensure_stages_dir():
-    """
-    Ensure the stages directory exists, or create it by removing and recreating
-    """
+def reset_stages_dir(stages_dir):
     try:
-        if os.path.exists(STAGES_DIR):
-            shutil.rmtree(STAGES_DIR)
-        os.makedirs(STAGES_DIR)
+        if os.path.exists(stages_dir):
+            shutil.rmtree(stages_dir)
+        os.makedirs(stages_dir)
     except Exception as e:
         sys.stderr.write(f"[ERROR] Failed to ensure stages directory: {e}\n")
-        sys.exit(1)  # Return code 1 for failure in ensuring stages directory
+        sys.exit(1)
 
 
-def write_intermediate_json(file_type: str, file_path: str, index: int):
-    """
-    Creates an intermediate JSON file in the stages/stage1 directory with a fixed name format.
-    """
+# Recursively searches for files matching the mask in the reference and sample directories
+# Ensures that reference files are excluded from the sample files list
+# Returns two lists: one for reference files and one for sample files
+
+
+def find_artifacts(reference_dir, sample_dir, lookup_mask):
+    reference_files = []
+    sample_files = []
+
+    for folder, _, files in os.walk(reference_dir):
+        for filename in files:
+            if fnmatch.fnmatch(filename, lookup_mask):
+                full_path = os.path.abspath(os.path.join(folder, filename))
+                reference_files.append(full_path)
+
+    for folder, _, files in os.walk(sample_dir):
+        for filename in files:
+            if fnmatch.fnmatch(filename, lookup_mask):
+                full_path = os.path.abspath(os.path.join(folder, filename))
+                # Exclude reference files from being added as sample
+                if full_path not in reference_files:
+                    sample_files.append(full_path)
+
+    return reference_files, sample_files
+
+
+# Writes the found reference and sample files into a single JSON array
+# Ensures only one reference file is included. Outputs to the specified file path
+
+
+def write_output_json(reference_files, sample_files, output_file):
+    if len(reference_files) != 1:
+        sys.stderr.write(
+            "[ERROR] Expected exactly one reference file. Found: {}\n".format(
+                len(reference_files)
+            )
+        )
+        sys.exit(6)
+
+    combined_data = [
+        {"type": "reference", "source_file": reference_files[0]},
+        *[
+            {"type": "sample", "source_file": sample_file}
+            for sample_file in sample_files
+        ],
+    ]
+
     try:
-        data = {
-            "type": file_type,
-            "source_file": file_path
-        }
-        # Use a fixed name format: input_0000.json, input_0001.json, etc.
-        filename = f"input_{index:04}.json"
-        output_path = os.path.join(STAGES_DIR, filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        print(f"[+] Saved {file_type} file: {output_path}")
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(combined_data, f, indent=2, ensure_ascii=False)
+        print(f"[+] JSON written to: {output_file}")
     except Exception as e:
-        sys.stderr.write(f"[ERROR] Failed to write JSON file for {file_type}: {e}\n")
-        sys.exit(2)  # Return code 2 for failure in writing JSON
+        sys.stderr.write(f"[ERROR] Failed to write output JSON: {e}\n")
+        sys.exit(7)
 
 
-def find_and_store_artifacts(base_dir: str, mask: str):
-    """
-    Searches for files using the given mask and stores information about them as intermediate artifacts.
-    """
-    reference_file_id = 0
-    trace_file_id = 1
+# Parses command-line arguments required for the script to run
+# Includes paths to sample, reference, and work directories, and a filename mask
 
-    try:
-        for root, _, files in os.walk(base_dir):
-            for filename in files:
-                if fnmatch.fnmatch(filename, mask):
-                    full_path = os.path.abspath(os.path.join(root, filename))
 
-                    if REFERENCE_DIR in full_path:
-                        write_intermediate_json("reference", full_path, reference_file_id)
-                    elif SAMPLE_DIR in full_path:
-                        write_intermediate_json("sample", full_path, trace_file_id)
-                        trace_file_id += 1
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] Failed to find and store artifacts: {e}\n")
-        sys.exit(3)  # Return code 3 for failure in finding and storing artifacts
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Find and classify profiling files.")
+    parser.add_argument(
+        "--sample-dir", required=True, help="Directory with unit test profiles"
+    )
+    parser.add_argument(
+        "--reference-dir", required=True, help="Directory with target profile"
+    )
+    parser.add_argument(
+        "--work-dir",
+        required=True,
+        help="Directory to store intermediate artifacts",
+    )
+    parser.add_argument(
+        "--lookup-mask",
+        default="*.jfr",
+        help="File mask to identify profiles",
+    )
+    return parser.parse_args()
+
+
+# Main processing pipeline that ties all functions together
+# Validates inputs, prepares workspace, and outputs results to a file
+
+
+def run_pipeline(args):
+    work_dir = os.path.abspath(args.work_dir)
+    reference_dir = os.path.abspath(args.reference_dir)
+    sample_dir = os.path.abspath(args.sample_dir)
+    lookup_mask = args.lookup_mask
+
+    if not os.path.exists(work_dir):
+        raise FileNotFoundError(f"--work-dir={work_dir} does not exist.")
+
+    stages_dir = os.path.join(work_dir, "stages", "stage1")
+    os.makedirs(os.path.dirname(stages_dir), exist_ok=True)
+    reset_stages_dir(stages_dir)
+
+    print(f"WORK_DIR:      {work_dir}")
+    print(f"REFERENCE_DIR: {reference_dir}")
+    print(f"SAMPLE_DIR:    {sample_dir}")
+    print(f"LOOKUP_MASK:   {lookup_mask}")
+
+    reference_files, sample_files = find_artifacts(
+        reference_dir, sample_dir, lookup_mask
+    )
+    print(f"[INFO] Found {len(reference_files)} reference file(s)")
+    print(f"[INFO] Found {len(sample_files)} sample file(s)")
+
+    output_json_path = os.path.join(stages_dir, "files.json")
+    write_output_json(reference_files, sample_files, output_json_path)
+
+
+# Entry point for the script: gets arguments and runs the pipeline
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Find and classify profiling files.")
-    parser.add_argument("--sample-dir", required=True, help="Directory with unit test profiles")
-    parser.add_argument("--reference-dir", required=True, help="Directory with target profile")
-    parser.add_argument("--work-dir", required=True, help="Directory to store intermediate artifacts")
-    parser.add_argument("--lookup-mask", default="*.jfr", help="File mask to identify profiles")
-
-    args = parser.parse_args()
-
+    args = parse_arguments()
     try:
-        run_dir = os.path.abspath(args.work_dir)
-        reference_dir = os.path.abspath(args.reference_dir)
-        sample_dir = os.path.abspath(args.sample_dir)
-        lookup_mask = args.lookup_mask
-
-        if not os.path.exists(run_dir):
-            raise FileNotFoundError(f"WORK_DIR {run_dir} does not exist.")
-
-        global REFERENCE_DIR, SAMPLE_DIR
-        REFERENCE_DIR = reference_dir
-        SAMPLE_DIR = sample_dir
-
-        print(f"WORK_DIR: {run_dir}")
-        print(f"REFERENCE_DIR: {REFERENCE_DIR}")
-        print(f"SAMPLE_DIR: {SAMPLE_DIR}")
-        print(f"LOOKUP_MASK: {lookup_mask}")
-
-        ensure_stages_dir()
-        find_and_store_artifacts(run_dir, lookup_mask)
-
+        run_pipeline(args)
     except FileNotFoundError as e:
         sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(4)  # Return code 4 for missing directory (WORK_DIR, REFERENCE_DIR, SAMPLE_DIR)
-
+        sys.exit(4)
     except Exception as e:
         sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(5)  # Return code 5 for general errors
+        sys.exit(5)
 
 
 if __name__ == "__main__":
