@@ -4,7 +4,7 @@ import json
 import shutil
 import argparse
 import sys
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 
 # Ensures the "stages" directory is reset and ready for output
