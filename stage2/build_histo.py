@@ -80,9 +80,9 @@ def load_histo(file_path: str) -> dict:
                 parts = line.split()
                 if len(parts) >= 2:
                     try:
-                        function_name = parts[0]
+                        identifier = parts[0]
                         number = int(parts[1])
-                        data.append((function_name, number))
+                        data.append((identifier, number))
                     except ValueError:
                         sys.stderr.write(
                             f"[ERROR] Invalid number format in file "
@@ -154,6 +154,91 @@ def save_json(histos: list, output_path: str) -> None:
         sys.exit(8)
 
 
+# This function compresses the histogram data based on the specified hotness compression percentage.
+# It sorts the histogram by method names and values, and progressively adds entries to a new histogram
+# while ensuring the total "hotness" does not exceed the given threshold (determined by the hotness_compression).
+def hotness_compress(uncompressed_result: list, hotness_compression: int) -> list:
+    if hotness_compression < 0 or hotness_compression > 100:
+        sys.stderr.write("[ERROR] HOTNESS_COMPRESSION must be between 0 and 100\n")
+        sys.exit(9)
+
+    if hotness_compression == 100:
+        return uncompressed_result
+
+    result = []
+    threshold = hotness_compression / 100
+
+    for entry in uncompressed_result:
+        histo = entry["histo"]
+        sorted_histo = dict(sorted(histo.items(), key=lambda item: (-item[1], item[0])))
+
+        total_sum = sum(sorted_histo.values())
+        current_hotness = 0
+        compressed_histo = {}
+
+        for method, count in sorted_histo.items():
+            if current_hotness + count <= threshold * total_sum:
+                compressed_histo[method] = count
+                current_hotness += count
+            else:
+                break
+
+        entry["histo"] = compressed_histo
+        result.append(entry)
+
+    return result
+
+
+# This function performs block compression on histograms. Identifiers with the same value
+# (number of occurrences) are grouped into blocks, and their values are summed together.
+# WIP
+def block_compress(uncompressed_result: list) -> list:
+    block_dict = {}
+
+    for entry in uncompressed_result:
+        histo = entry["histo"]
+        sorted_histo = dict(sorted(histo.items(), key=lambda item: (-item[1], item[0])))
+
+        for key, value in sorted_histo.items():
+            str_key = str(key)
+            if str_key not in block_dict:
+                block_dict[str_key] = [0] * len(uncompressed_result)
+
+            index = uncompressed_result.index(entry)
+            block_dict[str_key][index] += value
+
+    value_to_keys = {}
+    for key, values in block_dict.items():
+        value_tuple = tuple(values)
+        if value_tuple not in value_to_keys:
+            value_to_keys[value_tuple] = []
+        value_to_keys[value_tuple].append(key)
+
+    after_compression_block_dict = {}
+    for value_tuple, keys in value_to_keys.items():
+        if len(keys) > 1:
+            summed_value = sum(
+                block_dict[k][i] for k in keys for i in range(len(block_dict[k]))
+            )
+            main_key = keys[0]
+            after_compression_block_dict[main_key] = summed_value
+        else:
+            main_key = keys[0]
+            after_compression_block_dict[main_key] = block_dict[main_key]
+
+    result = []
+    for entry in uncompressed_result:
+        new_histo = {}
+        for key in entry["histo"]:
+            if key in after_compression_block_dict:
+                new_histo[key] = after_compression_block_dict[key]
+
+        entry["histo"] = new_histo
+        result.append(entry)
+
+    return result
+
+
 # This function loads files, processes entries, and saves the results to a JSON file.
 def run_pipeline(args: argparse.Namespace) -> None:
     work_dir = os.path.abspath(args.work_dir)
@@ -172,7 +257,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     entries = load_files_json(files_json_path)
     uncompressed_result = build_json_entries(entries, work_dir, lookup_mask)
-    save_json(uncompressed_result, output_path)
+    compressed_hotness_result = hotness_compress(
+        uncompressed_result, hotness_compression
+    )
+    # if block_compression:
+    #    compressed_hotness_and_block_result = block_compress(compressed_hotness_result)
+    #    save_json(compressed_hotness_and_block_result, output_path)
+    # else:
+    save_json(compressed_hotness_result, output_path)
 
 
 # The main function, responsible for handling command-line arguments and running the pipeline.
@@ -182,10 +274,10 @@ def main() -> None:
         run_pipeline(args)
     except FileNotFoundError as e:
         sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(9)
+        sys.exit(10)
     except Exception as e:
         sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(10)
+        sys.exit(11)
 
 
 if __name__ == "__main__":
