@@ -3,164 +3,216 @@ import sys
 import json
 import argparse
 import subprocess
+from typing import Optional, Tuple
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utils")))
+import utils
 
 
-# Parses the command-line arguments for the script to extract necessary input parameters.
-def parse_args() -> argparse.Namespace:
+class UnsupportedFileFormatError(utils.PipelineError):
+    """
+    Raised when an unsupported profile file format is encountered.
+    """
+
+    pass
+
+
+class HistoParseError(utils.PipelineError):
+    """
+    Raised when parsing a .histo file fails.
+    """
+
+    pass
+
+
+class JavaToolError(utils.PipelineError):
+    """
+    Raised when a Java tool fails to parse a JFR file.
+    """
+
+    pass
+
+
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parses command-line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed arguments including work directory, block compression flag
+                            and hotness compression percentage.
+    """
     parser = argparse.ArgumentParser(
         description="Extract histograms from profile files."
     )
-    parser.add_argument("--work-dir", type=str, required=True, help="Working directory")
-    parser.add_argument(
-        "--lookup-mask",
-        type=str,
-        required=True,
-        help="Hint for file format processing (.jfr, .histo, etc.)",
-    )
+    parser.add_argument("--work-dir", type=str, required=True, help="Working directory containing stages/files.json;"
+                                                                    "also used as the output directory for stages/histos.json")
     parser.add_argument(
         "--block-compression",
         type=str,
         default="true",
-        help="Enable block compression (true/false)",
+        help="Enable block compression (true/false) (default: true)",
     )
     parser.add_argument(
         "--hotness-compression",
         type=int,
         default=97,
-        help="Percentage for hotness compression (0-100)",
+        help="Percentage for hotness compression (0-100) (default: 97)",
     )
     return parser.parse_args()
 
 
-# If the "stages/histos.json" file exists, it will be deleted.
-def reset_histos_json(histos_json_path: str) -> None:
-    if os.path.exists(histos_json_path):
-        try:
-            os.remove(histos_json_path)
-        except Exception as e:
-            sys.stderr.write(
-                f"[ERROR] Failed to delete file '{histos_json_path}': {e}\n"
-            )
-            sys.exit(1)
+def build_histo_from_profile(json_entry: dict) -> dict:
+    """
+    Builds a histogram from a profile entry, depending on the file extension.
 
+    Args:
+        json_entry (dict): Profile entry containing a "source_file" field.
 
-# Loads a list of profile entries from the specified JSON file.
-def load_files_json(files_json_path: str) -> list:
-    try:
-        with open(files_json_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] Failed to load files.json: {e}\n")
-        sys.exit(2)
+    Returns:
+        dict: Histogram mapping function names to counts.
 
-
-# Loads a profile entry based on the file format indicated by the lookup mask.
-# The mask determines whether to load a .histo or .jfr file.
-def load_profile(entry: dict, work_dir: str, lookup_mask: str) -> dict:
-    file_path = entry["source_file"]
-    if lookup_mask == "*.histo":
-        return load_histo(file_path)
-    elif lookup_mask == "*.jfr":
-        return load_jfr(file_path, work_dir)
+    Raises:
+        UnsupportedFileFormatError: If the source file format is unsupported.
+    """
+    file_path = str(json_entry["source_file"])
+    file_extension = os.path.splitext(file_path)[1][1:]
+    if file_extension == "histo":
+        return build_from_raw_histo(file_path)
+    elif file_extension == "jfr":
+        return build_from_jfr(file_path)
     else:
-        sys.stderr.write(f"[ERROR] Unsupported lookup mask: {lookup_mask}\n")
-        sys.exit(3)
+        raise UnsupportedFileFormatError("Unsupported file format")
 
 
-# Loads histogram data from a .histo file. Each line contains a function name and a count.
-def load_histo(file_path: str) -> dict:
+def parse_raw_histo_line(file_path: str, line: str, line_num: int) -> Optional[Tuple[str, int]]:
+    """
+    Parses a single line from a .histo file.
+
+    Args:
+        file_path (str): Path to the .histo file.
+        line (str): Line content to parse.
+        line_num (int): Current line number (used for error reporting).
+
+    Returns:
+        Optional[Tuple[str, int]]: A tuple containing function name and count,
+            or None if the line is a comment or empty.
+
+    Raises:
+        HistoParseError: If the line is invalid or count conversion fails.
+    """
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+
+    parts = line.split()
+    if len(parts) >= 2:
+        try:
+            return parts[0], int(parts[1])
+        except ValueError:
+            raise HistoParseError(
+                f"Invalid number format in file '{file_path}' at line {line_num}: {line}"
+            )
+    else:
+        raise HistoParseError(
+            f"Invalid line in file '{file_path}' at line {line_num}: {line}"
+        )
+
+
+def build_from_raw_histo(file_path: str) -> dict:
+    """
+    Builds a histogram dictionary from a raw .histo file.
+
+    Args:
+        file_path (str): Path to the .histo file.
+
+    Returns:
+        dict: Histogram of function names to counts.
+
+    Raises:
+        HistoParseError: If reading or parsing the file fails.
+    """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with utils.open_with_default_encoding(file_path, "r") as f:
             data = []
             for line_num, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        identifier = parts[0]
-                        number = int(parts[1])
-                        data.append((identifier, number))
-                    except ValueError:
-                        sys.stderr.write(
-                            f"[ERROR] Invalid number format in file "
-                            f"'{file_path}' at line {line_num}: {line}\n"
-                        )
-                        sys.exit(4)
-                else:
-                    sys.stderr.write(
-                        f"[ERROR] Invalid line in file "
-                        f"'{file_path}' at line {line_num}: {line}\n"
-                    )
-                    sys.exit(5)
-
-            result = {func: val for func, val in data}
+                result = parse_raw_histo_line(file_path, line, line_num)
+                if result:
+                    identifier, count = result
+                    data.append((identifier, count))
+            return {func: val for func, val in data}
     except Exception as e:
-        sys.stderr.write(f"[ERROR] Error reading the file {file_path}: {e}\n")
-        sys.exit(6)
-    return result
+        raise HistoParseError(f"Error reading the file {file_path}: {e}")
 
 
-# Uses an external Java tool (JFRParser.jar) to parse a .jfr file and extract histogram data.
-def load_jfr(file_path: str, work_dir: str) -> dict:
-    stage_2_dir = os.path.join(work_dir, "stage2")
-    jar_name = os.path.join(stage_2_dir, "JFRParser.jar")
+def build_from_jfr(file_path: str) -> dict:
+    """
+    Extracts a histogram from a .jfr file using an external Java tool.
 
-    cmd = [
-        "java",
-        "-jar",
-        jar_name,
-        file_path,
-    ]
+    Args:
+        file_path (str): Path to the .jfr file.
+
+    Returns:
+        dict: Histogram parsed from the JFR output.
+
+    Raises:
+        JavaToolError: If the Java tool fails or returns invalid output.
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    java_name = os.path.join(current_dir, "JFRParser.java")
+
+    cmd = ["java", java_name, file_path]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-        histo = {}
-        for line in result.stdout.splitlines():
-            method, count = line.split(": ")
-            histo[method.strip('"')] = int(count)
-
-        return histo
-
+        return json.loads(result.stdout)
     except subprocess.CalledProcessError as e:
-        sys.stderr.write(f"[ERROR] Failed to parse JFR file {file_path}: {e.stderr}\n")
-        sys.exit(7)
+        raise JavaToolError(f"Failed to parse JFR file {file_path}: {e.stderr}")
 
 
-# Processes each entry in the profile list, loading the histogram data for each.
-# This function collects all histograms into a list of JSON-compatible dictionaries.
-def build_json_entries(entries: list, work_dir: str, lookup_mask: str) -> list:
+def build_histos(profiles: list) -> list:
+    """
+    Builds histograms for each profile entry.
+
+    Args:
+        profiles (list): List of profile dictionaries from files.json.
+
+    Returns:
+        list: List of dictionaries with type, source_file, and histogram data.
+    """
     result = []
-    for entry in entries:
-        histo = load_profile(entry, work_dir, lookup_mask)
+    required_keys = {"type", "source_file"}
+    for json_entry in profiles:
+        utils.input_json_validation(json_entry, required_keys)
+        histo = build_histo_from_profile(json_entry)
         result.append(
-            {"type": entry["type"], "source_file": entry["source_file"], "histo": histo}
+            {
+                "type": json_entry["type"],
+                "source_file": json_entry["source_file"],
+                "histo": histo,
+            }
         )
     return result
 
 
-# Saves the generated list of histograms to a specified JSON file.
-def save_json(histos: list, output_path: str) -> None:
-    try:
-        reset_histos_json(output_path)
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(histos, f, indent=2, ensure_ascii=False)
-        print(f"[+] JSON written to: {output_path}")
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] Failed to write histos.json: {e}\n")
-        sys.exit(8)
-
-
-# This function compresses the histogram data based on the specified hotness compression percentage.
-# It sorts the histogram by method names and values, and progressively adds entries to a new histogram
-# while ensuring the total "hotness" does not exceed the given threshold (determined by the hotness_compression).
 def hotness_compress(uncompressed_result: list, hotness_compression: int) -> list:
+    """
+    Applies hotness-based compression to histograms.
+
+    Keeps only the most frequently used functions until the cumulative count
+    reaches the specified hotness percentage.
+
+    Args:
+        uncompressed_result (list): List of histogram entries before compression.
+        hotness_compression (int): Threshold percentage (0–100).
+
+    Returns:
+        list: Compressed histogram entries.
+
+    Raises:
+        ValueError: If hotness_compression is outside the range [0, 100].
+    """
     if hotness_compression < 0 or hotness_compression > 100:
-        sys.stderr.write("[ERROR] HOTNESS_COMPRESSION must be between 0 and 100\n")
-        sys.exit(9)
+        raise ValueError("HOTNESS_COMPRESSION must be between 0 and 100")
 
     if hotness_compression == 100:
         return uncompressed_result
@@ -171,7 +223,6 @@ def hotness_compress(uncompressed_result: list, hotness_compression: int) -> lis
     for entry in uncompressed_result:
         histo = entry["histo"]
         sorted_histo = dict(sorted(histo.items(), key=lambda item: (-item[1], item[0])))
-
         total_sum = sum(sorted_histo.values())
         current_hotness = 0
         compressed_histo = {}
@@ -189,95 +240,129 @@ def hotness_compress(uncompressed_result: list, hotness_compression: int) -> lis
     return result
 
 
-# This function performs block compression on histograms. Identifiers with the same value
-# (number of occurrences) are grouped into blocks, and their values are summed together.
-# WIP
 def block_compress(uncompressed_result: list) -> list:
-    block_dict = {}
+    """
+    Compresses histogram entries by merging functions with identical profiles.
 
-    for entry in uncompressed_result:
+    Args:
+        uncompressed_result (list): List of histogram entries before compression.
+
+    Returns:
+        list: New list of histogram entries with compressed histograms.
+    """
+    if not uncompressed_result:
+        return []
+
+    num_entries = len(uncompressed_result)
+    merged_dict = {}
+    for idx, entry in enumerate(uncompressed_result):
         histo = entry["histo"]
-        sorted_histo = dict(sorted(histo.items(), key=lambda item: (-item[1], item[0])))
-
-        for key, value in sorted_histo.items():
-            str_key = str(key)
-            if str_key not in block_dict:
-                block_dict[str_key] = [0] * len(uncompressed_result)
-
-            index = uncompressed_result.index(entry)
-            block_dict[str_key][index] += value
+        for key, value in histo.items():
+            key_str = str(key)
+            if key_str not in merged_dict:
+                merged_dict[key_str] = [0] * num_entries
+            merged_dict[key_str][idx] = value
 
     value_to_keys = {}
-    for key, values in block_dict.items():
+    for key, values in merged_dict.items():
         value_tuple = tuple(values)
-        if value_tuple not in value_to_keys:
-            value_to_keys[value_tuple] = []
-        value_to_keys[value_tuple].append(key)
+        value_to_keys.setdefault(value_tuple, []).append(key)
 
-    after_compression_block_dict = {}
+    merged_blocks = {}
     for value_tuple, keys in value_to_keys.items():
-        if len(keys) > 1:
-            summed_value = sum(
-                block_dict[k][i] for k in keys for i in range(len(block_dict[k]))
-            )
-            main_key = keys[0]
-            after_compression_block_dict[main_key] = summed_value
+        main_key = keys[0]
+        if len(keys) == 1:
+            merged_blocks[main_key] = list(value_tuple)
         else:
-            main_key = keys[0]
-            after_compression_block_dict[main_key] = block_dict[main_key]
+            summed = [sum(merged_dict[k][i] for k in keys) for i in range(num_entries)]
+            merged_blocks[main_key] = summed
 
-    result = []
-    for entry in uncompressed_result:
-        new_histo = {}
-        for key in entry["histo"]:
-            if key in after_compression_block_dict:
-                new_histo[key] = after_compression_block_dict[key]
+    compressed_result = []
+    for i in range(num_entries):
+        histo = {}
+        for key, values in merged_blocks.items():
+            if values[i] > 0:
+                histo[key] = values[i]
+        new_entry = dict(uncompressed_result[i])
+        new_entry["histo"] = histo
+        compressed_result.append(new_entry)
 
-        entry["histo"] = new_histo
-        result.append(entry)
-
-    return result
+    return compressed_result
 
 
-# This function loads files, processes entries, and saves the results to a JSON file.
 def run_pipeline(args: argparse.Namespace) -> None:
+    """
+    Runs the full pipeline to generate and compress histograms.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments.
+
+    Raises:
+        FileNotFoundError: If the working directory does not exist.
+    """
     work_dir = os.path.abspath(args.work_dir)
-    lookup_mask = args.lookup_mask
     hotness_compression = args.hotness_compression
-    block_compression = args.block_compression
+    block_compression = args.block_compression.lower() == "true"
+
+    if not os.path.exists(work_dir):
+        raise FileNotFoundError(f"--work-dir={work_dir} does not exist.")
 
     stages_dir = os.path.join(work_dir, "stages")
-    files_json_path = os.path.join(stages_dir, "files.json")
+    input_path = os.path.join(stages_dir, "files.json")
     output_path = os.path.join(stages_dir, "histos.json")
 
     print(f"[INFO] WORK_DIR:            {work_dir}")
-    print(f"[INFO] LOOKUP_MASK:         {lookup_mask}")
     print(f"[INFO] HOTNESS_COMPRESSION: {hotness_compression}")
     print(f"[INFO] BLOCK_COMPRESSION:   {block_compression}")
 
-    entries = load_files_json(files_json_path)
-    uncompressed_result = build_json_entries(entries, work_dir, lookup_mask)
-    compressed_hotness_result = hotness_compress(
-        uncompressed_result, hotness_compression
-    )
-    # if block_compression:
-    #    compressed_hotness_and_block_result = block_compress(compressed_hotness_result)
-    #    save_json(compressed_hotness_and_block_result, output_path)
-    # else:
-    save_json(compressed_hotness_result, output_path)
+    profiles = utils.load_files_json(input_path)
+    result = build_histos(profiles)
+    compressed_result = hotness_compress(result, hotness_compression)
+    if block_compression:
+        compressed_result = block_compress(compressed_result)
+    utils.save_json(compressed_result, output_path)
 
 
-# The main function, responsible for handling command-line arguments and running the pipeline.
 def main() -> None:
+    """
+    Entry point of the script and top-level error handler.
+
+    Parses command-line arguments and runs the processing pipeline.
+    Handles and categorizes known exceptions, writes error messages to stderr,
+    and exits with appropriate status codes:
+
+    Exit Codes:
+        1: PipelineError, any other unexpected error
+        2: InvalidReferenceCountError
+        4: StageResetError, ArtifactDiscoveryError, OutputWriteError
+        5: FileNotFoundError
+    """
     try:
-        args = parse_args()
+        args = parse_arguments()
         run_pipeline(args)
-    except FileNotFoundError as e:
+    except (
+        UnsupportedFileFormatError,
+        utils.InvalidInputDataError
+    ) as e:
         sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(10)
+        sys.exit(2)
+    except (
+        HistoParseError,
+        JavaToolError,
+        utils.OutputResetError,
+        utils.OutputWriteError,
+    ) as e:
+        sys.stderr.write(f"[ERROR] {e}\n")
+        sys.exit(4)
+    except FileNotFoundError as e:
+        sys.stderr.write(f"[ERROR] File not found: {e}\n")
+        sys.exit(5)
+    except utils.PipelineError as e:
+        sys.stderr.write(f"[ERROR] {e}\n")
+        sys.exit(1)
     except Exception as e:
         sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(11)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
