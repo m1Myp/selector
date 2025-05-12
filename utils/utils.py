@@ -9,6 +9,7 @@ class PipelineError(Exception):
     """
     Base exception for all pipeline-related errors.
     """
+
     pass
 
 
@@ -16,6 +17,7 @@ class OutputResetError(PipelineError):
     """
     Raised when the stage directory cannot be reset.
     """
+
     pass
 
 
@@ -23,6 +25,7 @@ class OutputWriteError(PipelineError):
     """
     Raised when the script fails to write output files.
     """
+
     pass
 
 
@@ -104,7 +107,7 @@ def reset_output(output_path: str) -> None:
                 os.remove(output_path)
         except Exception as e:
             raise OutputResetError(f"Failed to delete '{output_path}': {e}")
-    if not (output_path.endswith('.json') or output_path.endswith('weight')):
+    if not (output_path.endswith(".json") or output_path.endswith("weight")):
         os.makedirs(output_path)
 
 

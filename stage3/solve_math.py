@@ -16,11 +16,28 @@ def parse_arguments() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed arguments including work directory, maximum selected samples and minimum similarity.
     """
-    parser = argparse.ArgumentParser(description="Optimize sample files weights for similarity to target histogram")
-    parser.add_argument("--work-dir", type=str, required=True, help="Working directory containing stages/histos.json;"
-                                                                    "also used as the output directory for stages/weight.json")
-    parser.add_argument("--max-selected-samples", type=int, default=5, help="Maximum number of selected sample files (default: 5)")
-    parser.add_argument("--min-similarity", type=float, default=95.0, help="Minimum similarity threshold (0-100%) (default: 95.0)")
+    parser = argparse.ArgumentParser(
+        description="Optimize sample files weights for similarity to target histogram"
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        required=True,
+        help="Working directory containing stages/histos.json;"
+        "also used as the output directory for stages/weight.json",
+    )
+    parser.add_argument(
+        "--max-selected-samples",
+        type=int,
+        default=5,
+        help="Maximum number of selected sample files (default: 5)",
+    )
+    parser.add_argument(
+        "--min-similarity",
+        type=float,
+        default=95.0,
+        help="Minimum similarity threshold (0-100%) (default: 95.0)",
+    )
     return parser.parse_args()
 
 
@@ -52,7 +69,9 @@ def compute_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sum(np.minimum(a, b)))
 
 
-def load_histograms(input_path: str) -> Tuple[Dict[str, Union[str, int]], List[Dict[str, int]], List[str], Dict[str, int]]:
+def load_histograms(
+    input_path: str,
+) -> Tuple[Dict[str, Union[str, int]], List[Dict[str, int]], List[str], Dict[str, int]]:
     """
     Loads histograms from the specified JSON file.
 
@@ -80,17 +99,25 @@ def load_histograms(input_path: str) -> Tuple[Dict[str, Union[str, int]], List[D
         raise ValueError("No reference histogram found.")
 
     if not reference.get("histo"):
-        raise ValueError(f"Reference histogram is empty in '{reference.get('source_file', '<unknown>')}'")
+        raise ValueError(
+            f"Reference histogram is empty in '{reference.get('source_file', '<unknown>')}'"
+        )
 
     samples = [
-        d for d in data
-        if d["type"] == "sample" and d.get("histo") and isinstance(d["histo"], dict) and len(d["histo"]) > 0
+        d
+        for d in data
+        if d["type"] == "sample"
+        and d.get("histo")
+        and isinstance(d["histo"], dict)
+        and len(d["histo"]) > 0
     ]
 
     if not samples:
         raise ValueError("No valid sample histograms found.")
 
-    all_identifiers = sorted(set().union(reference["histo"].keys(), *(d["histo"].keys() for d in samples)))
+    all_identifiers = sorted(
+        set().union(reference["histo"].keys(), *(d["histo"].keys() for d in samples))
+    )
     identifiers_to_index = {id_: i for i, id_ in enumerate(all_identifiers)}
 
     if isinstance(reference.get("source_file"), int):
@@ -99,7 +126,9 @@ def load_histograms(input_path: str) -> Tuple[Dict[str, Union[str, int]], List[D
     return reference, samples, all_identifiers, identifiers_to_index
 
 
-def prepare_vectors(reference: Dict, samples: List[Dict], identifiers_to_index: Dict[str, int]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+def prepare_vectors(
+    reference: Dict, samples: List[Dict], identifiers_to_index: Dict[str, int]
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Prepares the target vector and sample vectors based on the histograms.
 
@@ -132,7 +161,9 @@ def prepare_vectors(reference: Dict, samples: List[Dict], identifiers_to_index: 
     return target, np.array(sample_vectors), paths
 
 
-def solve_optimization(sample_vectors: np.ndarray, target: np.ndarray, max_selected: int) -> Tuple[np.ndarray, np.ndarray]:
+def solve_optimization(
+    sample_vectors: np.ndarray, target: np.ndarray, max_selected: int
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Solves the optimization problem to find the best weights for matching the target histogram.
 
@@ -153,12 +184,7 @@ def solve_optimization(sample_vectors: np.ndarray, target: np.ndarray, max_selec
     w = cp.Variable(n)
     z = cp.Variable(n, boolean=True)
 
-    constraints = [
-        w >= 0,
-        w <= z,
-        cp.sum(z) <= max_selected,
-        cp.sum(w) == 1
-    ]
+    constraints = [w >= 0, w <= z, cp.sum(z) <= max_selected, cp.sum(w) == 1]
 
     objective = cp.Minimize(cp.sum(cp.abs(sample_vectors.T @ w - target)))
     problem = cp.Problem(objective, constraints)
@@ -170,7 +196,13 @@ def solve_optimization(sample_vectors: np.ndarray, target: np.ndarray, max_selec
     return w.value, sample_vectors.T @ w.value
 
 
-def write_output(output_path: str, reference_file: str, similarity: float, weights: np.ndarray, paths: List[str]) -> None:
+def write_output(
+    output_path: str,
+    reference_file: str,
+    similarity: float,
+    weights: np.ndarray,
+    paths: List[str],
+) -> None:
     """
     Writes the optimization results to a JSON file, rounding weights to 4 decimals
     and adjusting to ensure the sum is exactly 1.0.
@@ -187,8 +219,7 @@ def write_output(output_path: str, reference_file: str, similarity: float, weigh
     """
 
     selected_raw = [
-        (paths[i], weights[i])
-        for i in range(len(weights)) if weights[i] > 1e-6
+        (paths[i], weights[i]) for i in range(len(weights)) if weights[i] > 1e-6
     ]
 
     rounded_weights = [round(w, 4) for _, w in selected_raw]
@@ -205,17 +236,14 @@ def write_output(output_path: str, reference_file: str, similarity: float, weigh
             raise ValueError("Unable to normalize weights to sum to 1.0")
 
     selected = [
-        {
-            "sample_path": selected_raw[i][0],
-            "weight": rounded_weights[i]
-        }
+        {"sample_path": selected_raw[i][0], "weight": rounded_weights[i]}
         for i in range(len(rounded_weights))
     ]
 
     output_weight_data = {
         "reference_file": reference_file,
         "similarity": round(similarity, 2),
-        "selected_samples": selected
+        "selected_samples": selected,
     }
 
     utils.save_json(output_weight_data, output_path)
@@ -246,16 +274,26 @@ def run_pipeline(args: argparse.Namespace) -> None:
     input_path = os.path.join(args.work_dir, "stages", "histos.json")
     output_path = os.path.join(args.work_dir, "stages", "weight.json")
 
-    reference, samples, all_identifiers, identifiers_to_index = load_histograms(input_path)
-    target, sample_vectors, paths = prepare_vectors(reference, samples, identifiers_to_index)
+    reference, samples, all_identifiers, identifiers_to_index = load_histograms(
+        input_path
+    )
+    target, sample_vectors, paths = prepare_vectors(
+        reference, samples, identifiers_to_index
+    )
 
-    weights, result_vector = solve_optimization(sample_vectors, target, args.max_selected_samples)
+    weights, result_vector = solve_optimization(
+        sample_vectors, target, args.max_selected_samples
+    )
     result_vector = normalize(result_vector)
     similarity = compute_similarity(result_vector, target)
 
     if similarity < args.min_similarity:
-        print(f"[INFO] Similarity {similarity:.2f}% is below the minimum threshold. Selecting maximum samples.")
-        weights, result_vector = solve_optimization(sample_vectors, target, len(sample_vectors))
+        print(
+            f"[INFO] Similarity {similarity:.2f}% is below the minimum threshold. Selecting maximum samples."
+        )
+        weights, result_vector = solve_optimization(
+            sample_vectors, target, len(sample_vectors)
+        )
         result_vector = normalize(result_vector)
         similarity = compute_similarity(result_vector, target)
 

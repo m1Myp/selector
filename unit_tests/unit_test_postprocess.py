@@ -52,7 +52,7 @@ class TestPostprocessScript(unittest.TestCase):
         self.test_solve_math.setUp()
 
     def run_script_postprocess(
-            self, work_dir: str, sample_artifact_depth: int, reference_artifact_depth: int
+        self, work_dir: str, sample_artifact_depth: int, reference_artifact_depth: int
     ) -> subprocess.CompletedProcess:
         """
         Runs the postprocess.py script as a subprocess using environment variables.
@@ -66,10 +66,12 @@ class TestPostprocessScript(unittest.TestCase):
         Returns:
             subprocess.CompletedProcess: The result of the subprocess run.
         """
-        command = f"python {self.tool_dir}/stage4/postprocess.py " \
-                  f"--work-dir={work_dir} "                        \
-                  f"--sample-artifact-depth={sample_artifact_depth} "           \
-                  f"--reference-artifact-depth={reference_artifact_depth}"
+        command = (
+            f"python {self.tool_dir}/stage4/postprocess.py "
+            f"--work-dir={work_dir} "
+            f"--sample-artifact-depth={sample_artifact_depth} "
+            f"--reference-artifact-depth={reference_artifact_depth}"
+        )
 
         result = subprocess.run(
             command,
@@ -90,25 +92,23 @@ class TestPostprocessScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        self.test_build_histos.run_script_build_histo(
-            self.valid_work_dir
-        )
+        self.test_build_histos.run_script_build_histo(self.valid_work_dir)
 
-        self.test_solve_math.run_script_solve_math(
-            self.valid_work_dir
-        )
+        self.test_solve_math.run_script_solve_math(self.valid_work_dir)
 
         result = self.run_script_postprocess(
             self.valid_work_dir,
             self.sample_artifact_depth,
-            self.reference_artifact_depth
+            self.reference_artifact_depth,
         )
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'weight' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'weight' not created"
+        )
 
     def test_success_scripts_sequence_from_jfr(self) -> None:
         """
@@ -125,25 +125,23 @@ class TestPostprocessScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        self.test_build_histos.run_script_build_histo(
-            self.valid_work_dir
-        )
+        self.test_build_histos.run_script_build_histo(self.valid_work_dir)
 
-        self.test_solve_math.run_script_solve_math(
-            self.valid_work_dir
-        )
+        self.test_solve_math.run_script_solve_math(self.valid_work_dir)
 
         result = self.run_script_postprocess(
             self.valid_work_dir,
             self.sample_artifact_depth,
-            self.reference_artifact_depth
+            self.reference_artifact_depth,
         )
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'weight' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'weight' not created"
+        )
 
     def test_missing_work_dir(self) -> None:
         """
@@ -153,9 +151,7 @@ class TestPostprocessScript(unittest.TestCase):
         """
         missing_dir = os.path.join(self.tool_dir, "not_exist_dir_abc")
         result = self.run_script_postprocess(
-            missing_dir,
-            self.sample_artifact_depth,
-            self.reference_artifact_depth
+            missing_dir, self.sample_artifact_depth, self.reference_artifact_depth
         )
         self.assertEqual(result.returncode, 5)
         self.assertIn("--work-dir=", result.stderr)
@@ -169,9 +165,7 @@ class TestPostprocessScript(unittest.TestCase):
         """
         invalid_work_dir = os.path.join(self.tool_dir, "1")
         result = self.run_script_postprocess(
-            invalid_work_dir,
-            self.sample_artifact_depth,
-            self.reference_artifact_depth
+            invalid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth
         )
         self.assertEqual(result.returncode, 5)
         self.assertIn("Failed to load input json file", result.stderr)
@@ -186,13 +180,19 @@ class TestPostprocessScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "weight.json")
 
-        invalid_input_data = [{"type": "reference", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}}]
+        invalid_input_data = [
+            {"type": "reference", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}},
+        ]
 
         utils.save_json(invalid_input_data, histos_path)
 
-        result = self.run_script_postprocess(self.valid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth)
+        result = self.run_script_postprocess(
+            self.valid_work_dir,
+            self.sample_artifact_depth,
+            self.reference_artifact_depth,
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("Expected dictionary", result.stderr)
 
@@ -210,7 +210,11 @@ class TestPostprocessScript(unittest.TestCase):
 
         utils.save_json(invalid_input_data, histos_path)
 
-        result = self.run_script_postprocess(self.valid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth)
+        result = self.run_script_postprocess(
+            self.valid_work_dir,
+            self.sample_artifact_depth,
+            self.reference_artifact_depth,
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("Missing required keys", result.stderr)
 
@@ -224,11 +228,19 @@ class TestPostprocessScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "weight.json")
 
-        invalid_input_data = {"reference_file": "reference", "similarity": 22, "selected_samples": 44}
+        invalid_input_data = {
+            "reference_file": "reference",
+            "similarity": 22,
+            "selected_samples": 44,
+        }
 
         utils.save_json(invalid_input_data, histos_path)
 
-        result = self.run_script_postprocess(self.valid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth)
+        result = self.run_script_postprocess(
+            self.valid_work_dir,
+            self.sample_artifact_depth,
+            self.reference_artifact_depth,
+        )
         self.assertEqual(result.returncode, 2)
         self.assertIn("`selected_samples` must be a list", result.stderr)
 
@@ -242,13 +254,23 @@ class TestPostprocessScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "weight.json")
 
-        invalid_input_data = {"reference_file": "reference", "similarity": 22, "selected_samples": [123]}
+        invalid_input_data = {
+            "reference_file": "reference",
+            "similarity": 22,
+            "selected_samples": [123],
+        }
 
         utils.save_json(invalid_input_data, histos_path)
 
-        result = self.run_script_postprocess(self.valid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth)
+        result = self.run_script_postprocess(
+            self.valid_work_dir,
+            self.sample_artifact_depth,
+            self.reference_artifact_depth,
+        )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Each item in `selected_samples` must be a dictionary", result.stderr)
+        self.assertIn(
+            "Each item in `selected_samples` must be a dictionary", result.stderr
+        )
 
     def test_invalid_input_json_invalid_selected_samples_data(self):
         """
@@ -260,13 +282,23 @@ class TestPostprocessScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "weight.json")
 
-        invalid_input_data = {"reference_file": "reference", "similarity": 22, "selected_samples": [{"invalid": "sample"}]}
+        invalid_input_data = {
+            "reference_file": "reference",
+            "similarity": 22,
+            "selected_samples": [{"invalid": "sample"}],
+        }
 
         utils.save_json(invalid_input_data, histos_path)
 
-        result = self.run_script_postprocess(self.valid_work_dir, self.sample_artifact_depth, self.reference_artifact_depth)
+        result = self.run_script_postprocess(
+            self.valid_work_dir,
+            self.sample_artifact_depth,
+            self.reference_artifact_depth,
+        )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Each sample test must contain `sample_path` and `weight`", result.stderr)
+        self.assertIn(
+            "Each sample test must contain `sample_path` and `weight`", result.stderr
+        )
 
     def tearDown(self) -> None:
         """

@@ -16,21 +16,28 @@ def parse_arguments() -> argparse.Namespace:
         argparse.Namespace: Parsed arguments including
         how many directory levels upward from the sample and reference files the artifacts should be copied.
     """
-    parser = argparse.ArgumentParser(description="Postprocess stage: copy artifacts and write weight file.")
+    parser = argparse.ArgumentParser(
+        description="Postprocess stage: copy artifacts and write weight file."
+    )
     parser.add_argument(
         "--reference-artifact-depth",
         type=int,
         default=2,
-        help="Depth from reference profile to root artifact folder (default: 2)"
+        help="Depth from reference profile to root artifact folder (default: 2)",
     )
     parser.add_argument(
         "--sample-artifact-depth",
         type=int,
         default=2,
-        help="Depth from sample profile to root artifact folder (default: 2)"
+        help="Depth from sample profile to root artifact folder (default: 2)",
     )
-    parser.add_argument("--work-dir", type=str, required=True, help="Working directory containing stages/weight.json;"
-                                                                    "also used as the output directory for artifacts and the weight file")
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        required=True,
+        help="Working directory containing stages/weight.json;"
+        "also used as the output directory for artifacts and the weight file",
+    )
     return parser.parse_args()
 
 
@@ -45,7 +52,9 @@ def validate_weight_json(input_json_data: dict) -> None:
         InvalidInputDataError: If the structure is not as expected.
     """
     if not isinstance(input_json_data, dict):
-        raise utils.InvalidInputDataError(f"Expected dictionary, got {type(input_json_data).__name__}")
+        raise utils.InvalidInputDataError(
+            f"Expected dictionary, got {type(input_json_data).__name__}"
+        )
 
     required_keys = {"reference_file", "similarity", "selected_samples"}
     missing = required_keys - input_json_data.keys()
@@ -57,9 +66,13 @@ def validate_weight_json(input_json_data: dict) -> None:
 
     for sample in input_json_data["selected_samples"]:
         if not isinstance(sample, dict):
-            raise utils.InvalidInputDataError("Each item in `selected_samples` must be a dictionary")
+            raise utils.InvalidInputDataError(
+                "Each item in `selected_samples` must be a dictionary"
+            )
         if "sample_path" not in sample or "weight" not in sample:
-            raise utils.InvalidInputDataError("Each sample test must contain `sample_path` and `weight` keys")
+            raise utils.InvalidInputDataError(
+                "Each sample test must contain `sample_path` and `weight` keys"
+            )
 
 
 def copy_artifact(source_file: str, depth: int, destination_root: Path) -> str:
@@ -120,7 +133,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     copy_artifact(input_data["reference_file"], reference_artifact_depth, work_dir)
     for selected_samples in input_data["selected_samples"]:
-        name = copy_artifact(selected_samples["sample_path"], sample_artifact_depth, work_dir)
+        name = copy_artifact(
+            selected_samples["sample_path"], sample_artifact_depth, work_dir
+        )
         output_weight_lines.append(f"{name} {selected_samples['weight']}")
 
     utils.reset_output(output_weight_path)

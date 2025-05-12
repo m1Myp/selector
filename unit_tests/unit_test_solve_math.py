@@ -45,9 +45,7 @@ class TestSolveMathScript(unittest.TestCase):
         self.test_build_histos = unit_test_build_histo.TestBuildHistoScript()
         self.test_build_histos.setUp()
 
-    def run_script_solve_math(
-            self, work_dir: str
-    ) -> subprocess.CompletedProcess:
+    def run_script_solve_math(self, work_dir: str) -> subprocess.CompletedProcess:
         """
         Runs the solve_math.py script as a subprocess using environment variables.
 
@@ -57,8 +55,9 @@ class TestSolveMathScript(unittest.TestCase):
         Returns:
             subprocess.CompletedProcess: The result of the subprocess run.
         """
-        command = f"python {self.tool_dir}/stage3/solve_math.py " \
-                  f"--work-dir={work_dir}"
+        command = (
+            f"python {self.tool_dir}/stage3/solve_math.py " f"--work-dir={work_dir}"
+        )
 
         result = subprocess.run(
             command,
@@ -79,19 +78,17 @@ class TestSolveMathScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        self.test_build_histos.run_script_build_histo(
-            self.valid_work_dir
-        )
+        self.test_build_histos.run_script_build_histo(self.valid_work_dir)
 
-        result = self.run_script_solve_math(
-            self.valid_work_dir
-        )
+        result = self.run_script_solve_math(self.valid_work_dir)
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'weight.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'weight.json' not created"
+        )
 
     def test_success_solve_math_from_jfr(self) -> None:
         """
@@ -106,19 +103,17 @@ class TestSolveMathScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        self.test_build_histos.run_script_build_histo(
-            self.valid_work_dir
-        )
+        self.test_build_histos.run_script_build_histo(self.valid_work_dir)
 
-        result = self.run_script_solve_math(
-            self.valid_work_dir
-        )
+        result = self.run_script_solve_math(self.valid_work_dir)
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'weight.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'weight.json' not created"
+        )
 
     def test_missing_work_dir(self) -> None:
         """
@@ -127,9 +122,7 @@ class TestSolveMathScript(unittest.TestCase):
         Verifies that the script exits with error code 5 and includes the expected error message.
         """
         missing_dir = os.path.join(self.tool_dir, "not_exist_dir_abc")
-        result = self.run_script_solve_math(
-            missing_dir
-        )
+        result = self.run_script_solve_math(missing_dir)
         self.assertEqual(result.returncode, 5)
         self.assertIn("--work-dir=", result.stderr)
 
@@ -141,9 +134,7 @@ class TestSolveMathScript(unittest.TestCase):
         about failing to load 'stages/histos.json'.
         """
         invalid_work_dir = os.path.join(self.tool_dir, "1")
-        result = self.run_script_solve_math(
-            invalid_work_dir
-        )
+        result = self.run_script_solve_math(invalid_work_dir)
         self.assertEqual(result.returncode, 5)
         self.assertIn("Failed to load input json file", result.stderr)
 
@@ -159,7 +150,7 @@ class TestSolveMathScript(unittest.TestCase):
 
         no_reference_data = [
             {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 2}},
-            {"type": "sample", "source_file": "sample2", "histo": {"c": 3, "d": 4}}
+            {"type": "sample", "source_file": "sample2", "histo": {"c": 3, "d": 4}},
         ]
         utils.save_json(no_reference_data, histos_path)
 
@@ -178,7 +169,11 @@ class TestSolveMathScript(unittest.TestCase):
         histos_path = os.path.join(stages_dir, "histos.json")
 
         no_samples_data = [
-            {"type": "reference", "source_file": "reference_file", "histo": {"a": 1, "b": 2}},
+            {
+                "type": "reference",
+                "source_file": "reference_file",
+                "histo": {"a": 1, "b": 2},
+            },
         ]
         utils.save_json(no_samples_data, histos_path)
 
@@ -198,7 +193,7 @@ class TestSolveMathScript(unittest.TestCase):
 
         empty_reference_data = [
             {"type": "reference", "source_file": "reference_file", "histo": {}},
-            {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 2}}
+            {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 2}},
         ]
         utils.save_json(empty_reference_data, histos_path)
 
@@ -216,9 +211,15 @@ class TestSolveMathScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "histos.json")
 
-        empty_samples_data = [{"type": "reference", "source_file": "reference_file", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample1", "histo": {}},
-                              {"type": "sample", "source_file": "sample2", "histo": {}}]
+        empty_samples_data = [
+            {
+                "type": "reference",
+                "source_file": "reference_file",
+                "histo": {"a": 1, "b": 1},
+            },
+            {"type": "sample", "source_file": "sample1", "histo": {}},
+            {"type": "sample", "source_file": "sample2", "histo": {}},
+        ]
         utils.save_json(empty_samples_data, histos_path)
 
         result = self.run_script_solve_math(self.valid_work_dir)
@@ -235,15 +236,19 @@ class TestSolveMathScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "histos.json")
 
-        invalid_input_data = [{"type": "reference", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}}]
+        invalid_input_data = [
+            {"type": "reference", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}},
+        ]
 
         utils.save_json(invalid_input_data, histos_path)
 
         result = self.run_script_solve_math(self.valid_work_dir)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Each histogram entry must contain exactly the keys ", result.stderr)
+        self.assertIn(
+            "Each histogram entry must contain exactly the keys ", result.stderr
+        )
 
     def tearDown(self) -> None:
         """

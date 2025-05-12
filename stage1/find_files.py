@@ -40,7 +40,9 @@ def parse_arguments() -> argparse.Namespace:
         "--reference-dir", required=True, help="Directory with target profile"
     )
     parser.add_argument(
-        "--work-dir", required=True, help="Used as the output directory for stages/files.json"
+        "--work-dir",
+        required=True,
+        help="Used as the output directory for stages/files.json",
     )
     parser.add_argument(
         "--lookup-mask", default="*.jfr", help="File mask to identify profiles"
@@ -177,7 +179,11 @@ def main() -> None:
     except InvalidReferenceCountError as e:
         sys.stderr.write(f"[ERROR] {e}\n")
         sys.exit(2)
-    except (utils.OutputResetError, ArtifactDiscoveryError, utils.OutputWriteError) as e:
+    except (
+        utils.OutputResetError,
+        ArtifactDiscoveryError,
+        utils.OutputWriteError,
+    ) as e:
         sys.stderr.write(f"[ERROR] {e}\n")
         sys.exit(4)
     except FileNotFoundError as e:

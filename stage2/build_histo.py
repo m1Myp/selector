@@ -44,8 +44,13 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract histograms from profile files."
     )
-    parser.add_argument("--work-dir", type=str, required=True, help="Working directory containing stages/files.json;"
-                                                                    "also used as the output directory for stages/histos.json")
+    parser.add_argument(
+        "--work-dir",
+        type=str,
+        required=True,
+        help="Working directory containing stages/files.json;"
+        "also used as the output directory for stages/histos.json",
+    )
     parser.add_argument(
         "--block-compression",
         type=str,
@@ -84,7 +89,9 @@ def build_histo_from_profile(json_entry: dict) -> dict:
         raise UnsupportedFileFormatError("Unsupported file format")
 
 
-def parse_raw_histo_line(file_path: str, line: str, line_num: int) -> Optional[Tuple[str, int]]:
+def parse_raw_histo_line(
+    file_path: str, line: str, line_num: int
+) -> Optional[Tuple[str, int]]:
     """
     Parses a single line from a .histo file.
 
@@ -340,10 +347,7 @@ def main() -> None:
     try:
         args = parse_arguments()
         run_pipeline(args)
-    except (
-        UnsupportedFileFormatError,
-        utils.InvalidInputDataError
-    ) as e:
+    except (UnsupportedFileFormatError, utils.InvalidInputDataError) as e:
         sys.stderr.write(f"[ERROR] {e}\n")
         sys.exit(2)
     except (

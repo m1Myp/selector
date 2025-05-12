@@ -40,9 +40,7 @@ class TestBuildHistoScript(unittest.TestCase):
         self.test_find_files = unit_test_find_files.TestFindFilesScript()
         self.test_find_files.setUp()
 
-    def run_script_build_histo(
-            self, work_dir: str
-    ) -> subprocess.CompletedProcess:
+    def run_script_build_histo(self, work_dir: str) -> subprocess.CompletedProcess:
         """
         Runs the build_histo.py script as a subprocess using environment variables.
 
@@ -52,8 +50,9 @@ class TestBuildHistoScript(unittest.TestCase):
         Returns:
             subprocess.CompletedProcess: The result of the subprocess run.
         """
-        command = f"python {self.tool_dir}/stage2/build_histo.py " \
-                  f"--work-dir={work_dir}"
+        command = (
+            f"python {self.tool_dir}/stage2/build_histo.py " f"--work-dir={work_dir}"
+        )
 
         result = subprocess.run(
             command,
@@ -74,14 +73,14 @@ class TestBuildHistoScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        result = self.run_script_build_histo(
-            self.valid_work_dir
-        )
+        result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'histos.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'histos.json' not created"
+        )
 
     def test_success_build_histos_from_jfr(self) -> None:
         """
@@ -96,14 +95,14 @@ class TestBuildHistoScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        result = self.run_script_build_histo(
-            self.valid_work_dir
-        )
+        result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'histos.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'histos.json' not created"
+        )
 
     def test_missing_work_dir(self) -> None:
         """
@@ -112,9 +111,7 @@ class TestBuildHistoScript(unittest.TestCase):
         Verifies that the script exits with error code 5 and includes the expected error message.
         """
         missing_dir = os.path.join(self.tool_dir, "not_exist_dir_abc")
-        result = self.run_script_build_histo(
-            missing_dir
-        )
+        result = self.run_script_build_histo(missing_dir)
         self.assertEqual(result.returncode, 5)
         self.assertIn("--work-dir=", result.stderr)
 
@@ -127,7 +124,9 @@ class TestBuildHistoScript(unittest.TestCase):
         """
         unsupported_lookup_mask = "*.unsupported"
         os.makedirs(self.valid_reference_dir, exist_ok=True)
-        file_with_unsupported_format = os.path.join(self.valid_reference_dir, "file_with_unsupported_format.unsupported")
+        file_with_unsupported_format = os.path.join(
+            self.valid_reference_dir, "file_with_unsupported_format.unsupported"
+        )
         with utils.open_with_default_encoding(file_with_unsupported_format, "w") as f:
             f.write("unsupported")
 
@@ -135,12 +134,10 @@ class TestBuildHistoScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            unsupported_lookup_mask
+            unsupported_lookup_mask,
         )
 
-        result = self.run_script_build_histo(
-            self.valid_work_dir
-        )
+        result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 2)
         self.assertIn("Unsupported file format", result.stderr)
 
@@ -154,9 +151,7 @@ class TestBuildHistoScript(unittest.TestCase):
         about failing to load 'stages/files.json'.
         """
         invalid_work_dir = os.path.join(self.tool_dir, "1")
-        result = self.run_script_build_histo(
-            invalid_work_dir
-        )
+        result = self.run_script_build_histo(invalid_work_dir)
         self.assertEqual(result.returncode, 5)
         self.assertIn("Failed to load input json file", result.stderr)
 
@@ -167,21 +162,23 @@ class TestBuildHistoScript(unittest.TestCase):
         Verifies that the build_histo.py script exits with error code 4 and includes an error
         message indicating that the number format in the file is invalid.
         """
-        another_reference_dir = os.path.join(self.valid_sample_dir, "another_reference_dir")
+        another_reference_dir = os.path.join(
+            self.valid_sample_dir, "another_reference_dir"
+        )
         os.makedirs(another_reference_dir, exist_ok=True)
-        invalid_number_format_histo = os.path.join(another_reference_dir, "invalid_number_format.histo")
+        invalid_number_format_histo = os.path.join(
+            another_reference_dir, "invalid_number_format.histo"
+        )
         with utils.open_with_default_encoding(invalid_number_format_histo, "w") as f:
             f.write("hello 0.00001")
         self.test_find_files.run_script_find_files(
             self.valid_sample_dir,
             another_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        result = self.run_script_build_histo(
-            self.valid_work_dir
-        )
+        result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 4)
         self.assertIn("Invalid number format in file", result.stderr)
 
@@ -195,21 +192,23 @@ class TestBuildHistoScript(unittest.TestCase):
         Verifies that the build_histo.py script exits with error code 4 and includes an error
         message indicating that a line in the file is invalid.
         """
-        another_reference_dir = os.path.join(self.valid_sample_dir, "another_reference_dir")
+        another_reference_dir = os.path.join(
+            self.valid_sample_dir, "another_reference_dir"
+        )
         os.makedirs(another_reference_dir, exist_ok=True)
-        invalid_line_histo = os.path.join(another_reference_dir, "invalid_number_format.histo")
+        invalid_line_histo = os.path.join(
+            another_reference_dir, "invalid_number_format.histo"
+        )
         with utils.open_with_default_encoding(invalid_line_histo, "w") as f:
             f.write("hello")
         self.test_find_files.run_script_find_files(
             self.valid_sample_dir,
             another_reference_dir,
             self.valid_work_dir,
-            self.valid_lookup_mask
+            self.valid_lookup_mask,
         )
 
-        result = self.run_script_build_histo(
-            self.valid_work_dir
-        )
+        result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 4)
         self.assertIn("Invalid line in file", result.stderr)
 
@@ -226,15 +225,19 @@ class TestBuildHistoScript(unittest.TestCase):
         os.makedirs(stages_dir, exist_ok=True)
         histos_path = os.path.join(stages_dir, "files.json")
 
-        invalid_input_data = [{"type": "reference", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
-                              {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}}]
+        invalid_input_data = [
+            {"type": "reference", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample1", "histo": {"a": 1, "b": 1}},
+            {"type": "sample", "source_file": "sample2", "histo": {"a": 1, "b": 1}},
+        ]
 
         utils.save_json(invalid_input_data, histos_path)
 
         result = self.run_script_build_histo(self.valid_work_dir)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Each histogram entry must contain exactly the keys ", result.stderr)
+        self.assertIn(
+            "Each histogram entry must contain exactly the keys ", result.stderr
+        )
 
     def tearDown(self) -> None:
         """

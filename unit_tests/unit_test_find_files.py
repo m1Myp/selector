@@ -37,7 +37,7 @@ class TestFindFilesScript(unittest.TestCase):
         self.output_file = os.path.join(self.valid_work_dir, "stages", "files.json")
 
     def run_script_find_files(
-            self, sample_dir: str, reference_dir: str, work_dir: str, lookup_mask: str
+        self, sample_dir: str, reference_dir: str, work_dir: str, lookup_mask: str
     ) -> subprocess.CompletedProcess:
         """
         Runs the find_files.py script as a subprocess.
@@ -51,11 +51,13 @@ class TestFindFilesScript(unittest.TestCase):
         Returns:
             subprocess.CompletedProcess: The result of the subprocess run.
         """
-        command = f"python {self.tool_dir}/stage1/find_files.py " \
-                  f"--sample-dir={sample_dir} "                   \
-                  f"--reference-dir={reference_dir} "             \
-                  f"--work-dir={work_dir} "                       \
-                  f"--lookup-mask={lookup_mask}"
+        command = (
+            f"python {self.tool_dir}/stage1/find_files.py "
+            f"--sample-dir={sample_dir} "
+            f"--reference-dir={reference_dir} "
+            f"--work-dir={work_dir} "
+            f"--lookup-mask={lookup_mask}"
+        )
         result = subprocess.run(
             command,
             shell=True,
@@ -75,10 +77,12 @@ class TestFindFilesScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.lookup_mask
+            self.lookup_mask,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'files.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'files.json' not created"
+        )
 
     def test_success_find_files_jfr(self) -> None:
         """
@@ -94,10 +98,12 @@ class TestFindFilesScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.lookup_mask
+            self.lookup_mask,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'files.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'files.json' not created"
+        )
 
     def test_success_find_files_txt(self) -> None:
         """
@@ -115,10 +121,12 @@ class TestFindFilesScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.lookup_mask
+            self.lookup_mask,
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertTrue(os.path.exists(self.output_file), "Output file 'files.json' not created")
+        self.assertTrue(
+            os.path.exists(self.output_file), "Output file 'files.json' not created"
+        )
 
         os.remove(txt_file)
 
@@ -130,7 +138,10 @@ class TestFindFilesScript(unittest.TestCase):
         """
         missing_dir = os.path.join(self.tool_dir, "not_exist_dir_abc")
         result = self.run_script_find_files(
-            self.valid_sample_dir, self.valid_reference_dir, missing_dir, self.lookup_mask
+            self.valid_sample_dir,
+            self.valid_reference_dir,
+            missing_dir,
+            self.lookup_mask,
         )
         self.assertEqual(result.returncode, 5)
         self.assertIn("--work-dir=", result.stderr)
@@ -143,8 +154,12 @@ class TestFindFilesScript(unittest.TestCase):
         about the expected number of reference files.
         """
         os.makedirs(self.valid_reference_dir, exist_ok=True)
-        invalid_count_reference1 = os.path.join(self.valid_reference_dir, "invalid_reference1.histo")
-        invalid_count_reference2 = os.path.join(self.valid_reference_dir, "invalid_reference2.histo")
+        invalid_count_reference1 = os.path.join(
+            self.valid_reference_dir, "invalid_reference1.histo"
+        )
+        invalid_count_reference2 = os.path.join(
+            self.valid_reference_dir, "invalid_reference2.histo"
+        )
         with utils.open_with_default_encoding(invalid_count_reference1, "w") as f:
             f.write("hello")
         with utils.open_with_default_encoding(invalid_count_reference2, "w") as f:
@@ -154,7 +169,7 @@ class TestFindFilesScript(unittest.TestCase):
             self.valid_sample_dir,
             self.valid_reference_dir,
             self.valid_work_dir,
-            self.lookup_mask
+            self.lookup_mask,
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("Expected exactly one reference file", result.stderr)
