@@ -3,7 +3,7 @@ import sys
 import argparse
 import numpy as np
 import cvxpy as cp
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utils")))
 import utils
@@ -38,6 +38,11 @@ def parse_arguments() -> argparse.Namespace:
         default=95.0,
         help="Minimum similarity threshold (0-100%) (default: 95.0)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full traceback on error for debugging purposes"
+    )
     return parser.parse_args()
 
 
@@ -70,23 +75,29 @@ def compute_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def load_histograms(
-    input_path: str,
-) -> Tuple[Dict[str, Union[str, int]], List[Dict[str, int]], List[str], Dict[str, int]]:
+    input_path: utils.Path,
+) -> Tuple[Dict[str, Dict[str, int]], List[Dict[str, Dict[str, int]]], List[str], Dict[str, int]]:
     """
     Loads histograms from the specified JSON file.
 
     Args:
-        input_path (str): Path to the input JSON file.
+        input_path (utils.Path): Path to the input JSON file.
 
     Returns:
-        Tuple[Dict[str, Union[str, int]], List[Dict[str, int]], List[str], Dict[str, int]]:
-            - reference (Dict[str, Union[str, int]]): Reference histogram with source_file which could be str or int.
+        Tuple[List[Dict[str, int]], utils.Path, List[Dict[str, int]], List[str], Dict[str, int]]:
+            - reference_histo (Dict[Dict[<histo_identificator>, <histo_counter>]]):
+             Reference histogram with source_file which could be string.
             - samples (List[Dict[str, int]]): List of sample histograms.
             - all_ids (List[str]): List of all unique IDs across histograms.
             - identifiers_to_index (Dict[str, int]): Mapping of IDs to indices.
 
     Raises:
         ValueError: If the reference histogram is empty.
+
+    TODO Histogramma как класс в utils.
+    TODO TypeAlyas? либо DataClass
+    TODO опенсорс библиотека по валидации жсона по наличии ключей, валидации их типов и непустоты значений
+    utils.Histogram
     """
     data = utils.load_files_json(input_path)
 
@@ -197,22 +208,22 @@ def solve_optimization(
 
 
 def write_output(
-    output_path: str,
-    reference_file: str,
+    output_path: utils.Path,
+    reference_file: utils.Path,
     similarity: float,
     weights: np.ndarray,
-    paths: List[str],
+    paths: List[utils.Path],
 ) -> None:
     """
     Writes the optimization results to a JSON file, rounding weights to 4 decimals
     and adjusting to ensure the sum is exactly 1.0.
 
     Args:
-        output_path (str): Path to the output JSON file.
-        reference_file (str): Path to the reference file.
+        output_path (utils.Path): Path to the output JSON file.
+        reference_file (utils.Path): Path to the reference file.
         similarity (float): Similarity score of the result.
         weights (np.ndarray): Weights for each selected sample file.
-        paths (List[str]): File paths for each selected sample file.
+        paths (List[utils.Path]): File paths for each selected sample file.
 
     Raises:
         ValueError: If weights cannot be normalized to sum to 1.0.
@@ -297,44 +308,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         result_vector = normalize(result_vector)
         similarity = compute_similarity(result_vector, target)
 
-    write_output(output_path, reference["source_file"], similarity, weights, paths)
+    write_output(output_path, reference['source_file'], similarity, weights, paths)
 
     print(f"[INFO] Optimization complete. Similarity: {similarity:.2f}%")
 
 
-def main() -> None:
-    """
-    Entry point of the script and top-level error handler.
-
-    Parses command-line arguments and runs the processing pipeline.
-    Handles and categorizes known exceptions, writes error messages to stderr,
-    and exits with appropriate status codes:
-
-    Exit Codes:
-        1: PipelineError, any other unexpected error
-        2: InvalidReferenceCountError
-        4: StageResetError, ArtifactDiscoveryError, OutputWriteError
-        5: FileNotFoundError
-    """
-    try:
-        args = parse_arguments()
-        run_pipeline(args)
-    except (ValueError, utils.InvalidInputDataError) as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(2)
-    except (utils.OutputResetError, utils.OutputWriteError, RuntimeError) as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(4)
-    except FileNotFoundError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(5)
-    except utils.PipelineError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+    utils.main(parse_arguments, run_pipeline)

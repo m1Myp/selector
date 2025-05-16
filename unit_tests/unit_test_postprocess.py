@@ -59,8 +59,10 @@ class TestPostprocessScript(unittest.TestCase):
 
         Args:
             work_dir (str): Path to the work directory.
-            sample_artifact_depth (int): The number of directory levels to consider for the sample artifacts during postprocessing.
-            reference_artifact_depth (int): The number of directory levels to consider for the reference artifacts during postprocessing.
+            sample_artifact_depth (int): The number of directory levels to consider
+            for the sample artifacts during postprocessing.
+            reference_artifact_depth (int): The number of directory levels to consider
+            for the reference artifacts during postprocessing.
 
 
         Returns:
@@ -172,7 +174,8 @@ class TestPostprocessScript(unittest.TestCase):
 
     def test_invalid_input_json_data_not_dictionary(self):
         """
-        Tests the case where the top-level JSON structure from the "stages/weight.json" is a list instead of a dictionary.
+        Tests the case where the top-level JSON structure from the "stages/weight.json"
+        is a list instead of a dictionary.
 
         Verifies that the script exits with code 2 and includes an error message indicating a dictionary was expected.
         """
@@ -220,9 +223,11 @@ class TestPostprocessScript(unittest.TestCase):
 
     def test_invalid_input_json_invalid_selected_samples(self):
         """
-        Tests the case where the 'selected_unit_tests' key from the "stages/weight.json" is present but its value is not a list.
+        Tests the case where the 'selected_unit_tests' key from the "stages/weight.json"
+        is present but its value is not a list.
 
-        Verifies that the script exits with code 2 and includes an error message stating that 'selected_unit_tests' must be a list.
+        Verifies that the script exits with code 2 and includes an error message stating
+        that 'selected_unit_tests' must be a list.
         """
         stages_dir = os.path.join(self.valid_work_dir, "stages")
         os.makedirs(stages_dir, exist_ok=True)
@@ -246,9 +251,11 @@ class TestPostprocessScript(unittest.TestCase):
 
     def test_invalid_input_json_invalid_selected_samples_data_not_a_dictionary(self):
         """
-        Tests the case where 'selected_unit_tests' from the "stages/weight.json" is a list but contains non-dictionary elements.
+        Tests the case where 'selected_unit_tests' from the "stages/weight.json"
+        is a list but contains non-dictionary elements.
 
-        Verifies that the script exits with code 2 and includes an error message indicating each item must be a dictionary.
+        Verifies that the script exits with code 2 and includes an error
+        message indicating each item must be a dictionary.
         """
         stages_dir = os.path.join(self.valid_work_dir, "stages")
         os.makedirs(stages_dir, exist_ok=True)
@@ -274,9 +281,11 @@ class TestPostprocessScript(unittest.TestCase):
 
     def test_invalid_input_json_invalid_selected_samples_data(self):
         """
-        Tests the case where 'selected_unit_tests' from the "stages/weight.json" contains dictionaries missing required keys.
+        Tests the case where 'selected_unit_tests' from the "stages/weight.json"
+        contains dictionaries missing required keys.
 
-        Verifies that the script exits with code 2 and includes an error message indicating each test must have 'unit_test_path' and 'weight' keys.
+        Verifies that the script exits with code 2 and includes an error message
+        indicating each test must have 'unit_test_path' and 'weight' keys.
         """
         stages_dir = os.path.join(self.valid_work_dir, "stages")
         os.makedirs(stages_dir, exist_ok=True)

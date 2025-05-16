@@ -1,8 +1,22 @@
 import os
 import shutil
 import json
+import sys
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Callable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Path(str):
+
+    pass
+
+
+@dataclass(frozen=True)
+class Histogram(dict[str, int]):
+
+    pass
 
 
 class PipelineError(Exception):
@@ -13,31 +27,9 @@ class PipelineError(Exception):
     pass
 
 
-class OutputResetError(PipelineError):
-    """
-    Raised when the stage directory cannot be reset.
-    """
-
-    pass
-
-
-class OutputWriteError(PipelineError):
-    """
-    Raised when the script fails to write output files.
-    """
-
-    pass
-
-
-class InvalidInputDataError(Exception):
-    """Raised when a JSON entry does not contain exactly the required keys."""
-
-    pass
-
-
 def input_json_validation(json_entry, required_keys):
     if set(json_entry.keys()) != required_keys:
-        raise InvalidInputDataError(
+        raise PipelineError(
             f"Each histogram entry must contain exactly the keys {required_keys}. "
             f"Found {set(json_entry.keys())} in entry: {json_entry}"
         )
@@ -55,7 +47,7 @@ def save_json(output_data: list, output_file: str) -> None:
         output_file (str): Path to the file where the JSON will be saved.
 
     Raises:
-        OutputWriteError: If writing to the file fails.
+        PipelineError: If writing to the file fails.
     """
     try:
         reset_output(output_file)
@@ -63,7 +55,7 @@ def save_json(output_data: list, output_file: str) -> None:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
         print(f"[+] JSON written to: {output_file}")
     except Exception as e:
-        raise OutputWriteError(f"Failed to write output JSON: {e}")
+        raise PipelineError(f"Failed to write output JSON: {e}")
 
 
 def load_files_json(files_json_path: str) -> list:
@@ -97,7 +89,7 @@ def reset_output(output_path: str) -> None:
         output_path (str): Path to the file or directory to reset.
 
     Raises:
-        OutputResetError: If the file or directory could not be deleted or created.
+        PipelineError: If the file or directory could not be deleted or created.
     """
     if os.path.exists(output_path):
         try:
@@ -106,7 +98,7 @@ def reset_output(output_path: str) -> None:
             else:
                 os.remove(output_path)
         except Exception as e:
-            raise OutputResetError(f"Failed to delete '{output_path}': {e}")
+            raise PipelineError(f"Failed to delete '{output_path}': {e}")
     if not (output_path.endswith(".json") or output_path.endswith("weight")):
         os.makedirs(output_path)
 
@@ -128,3 +120,25 @@ def open_with_default_encoding(file_path: str, mode: str) -> Generator:
     """
     with open(file_path, mode, encoding="utf-8") as f:
         yield f
+
+
+def main(parse_args: Callable[[], any], run_pipeline: Callable[[any], None]) -> None:
+    """
+    Entry point of the script and top-level error handler.
+
+    This function parses command-line arguments using the provided parser function,
+    runs the main pipeline logic, and handles exceptions consistently.
+    If the --debug flag is set, a full traceback is printed on error.
+
+    Args:
+        parse_args: A function with no arguments that returns an argparse.Namespace.
+        run_pipeline: A function that takes the parsed arguments and executes the main logic.
+    """
+    args = parse_args()
+    try:
+        run_pipeline(args)
+    except Exception as e:
+        sys.stderr.write(f"[ERROR]: {e}\n")
+        if args.debug:
+            traceback.print_exc()
+        sys.exit(1)

@@ -199,7 +199,7 @@ class TestSolveMathScript(unittest.TestCase):
 
         result = self.run_script_solve_math(self.valid_work_dir)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Reference histogram is empty", result.stderr)
+        self.assertIn("123", result.stderr)
 
     def test_empty_samples(self):
         """

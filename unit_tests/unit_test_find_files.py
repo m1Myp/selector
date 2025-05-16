@@ -143,7 +143,7 @@ class TestFindFilesScript(unittest.TestCase):
             missing_dir,
             self.lookup_mask,
         )
-        self.assertEqual(result.returncode, 5)
+        self.assertEqual(result.returncode, 1)
         self.assertIn("--work-dir=", result.stderr)
 
     def test_invalid_reference_count(self) -> None:
@@ -171,7 +171,7 @@ class TestFindFilesScript(unittest.TestCase):
             self.valid_work_dir,
             self.lookup_mask,
         )
-        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.returncode, 1)
         self.assertIn("Expected exactly one reference file", result.stderr)
 
         os.remove(invalid_count_reference1)

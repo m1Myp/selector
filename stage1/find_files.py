@@ -8,22 +8,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "u
 import utils
 
 
-class ArtifactDiscoveryError(utils.PipelineError):
-    """
-    Raised when the input files could not be found or matched.
-    """
-
-    pass
-
-
-class InvalidReferenceCountError(utils.PipelineError):
-    """
-    Raised when an incorrect number of reference files is found.
-    """
-
-    pass
-
-
 def parse_arguments() -> argparse.Namespace:
     """
     Parses command-line arguments.
@@ -47,26 +31,31 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--lookup-mask", default="*.jfr", help="File mask to identify profiles"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full traceback on error for debugging purposes"
+    )
     return parser.parse_args()
 
 
 def write_output(
-    reference_files: List[str], sample_files: List[str], output_file: str
+    reference_files: List[utils.Path], sample_files: List[utils.Path], output_file: utils.Path
 ) -> None:
     """
     Writes reference and sample files into a JSON array.
 
     Args:
-        reference_files: List of reference file paths.
-        sample_files: List of sample file paths.
-        output_file: Destination path for the JSON output.
+        reference_files (List[utils.Path]): List of reference file paths.
+        sample_files (List[utils.Path]): List of sample file paths.
+        output_file (utils.Path): Destination path for the JSON output.
 
     Raises:
-        InvalidReferenceCountError: If the number of reference files is not exactly one.
+        PipelineError: If the number of reference files is not exactly one.
     """
     if len(reference_files) != 1:
-        raise InvalidReferenceCountError(
-            f"Expected exactly one reference file, found: {len(reference_files)}"
+        raise utils.PipelineError(
+            f"Expected exactly one reference file, found: {len(reference_files)}, {reference_files}"
         )
 
     combined_data = [
@@ -78,8 +67,8 @@ def write_output(
 
 
 def find_artifacts(
-    reference_dir: str, sample_dir: str, lookup_mask: str
-) -> Tuple[List[str], List[str]]:
+    reference_dir: utils.Path, sample_dir: utils.Path, lookup_mask: str
+) -> Tuple[List[utils.Path], List[utils.Path]]:
     """
     Finds and classifies profiling files as reference or sample.
 
@@ -88,17 +77,17 @@ def find_artifacts(
     from the sample list.
 
     Args:
-        reference_dir (str): Directory containing a single reference profile file.
-        sample_dir (str): Directory containing multiple sample (unit test) profile files.
+        reference_dir (utils.Path): Directory containing a single reference profile file.
+        sample_dir (utils.Path): Directory containing multiple sample (unit test) profile files.
         lookup_mask (str): Filename pattern to match (e.g., '*.jfr').
 
     Returns:
-        Tuple[List[str], List[str]]: A tuple containing:
-            - reference_files: List of matched reference file paths.
-            - sample_files: List of matched sample file paths (excluding references).
+        Tuple[List[utils.Path], List[utils.Path]]: A tuple containing:
+            - reference_files (List[utils.Path]): List of matched reference file paths.
+            - sample_files (List[utils.Path]): List of matched sample file paths (excluding references).
 
     Raises:
-        ArtifactDiscoveryError: If an error occurs during file discovery.
+        PipelineError: If an error occurs during file discovery.
     """
     try:
         reference_files = []
@@ -119,12 +108,12 @@ def find_artifacts(
 
         return reference_files, sample_files
     except Exception as e:
-        raise ArtifactDiscoveryError(f"Failed to search for artifacts: {e}")
+        raise utils.PipelineError(f"Failed to search for artifacts: {e}")
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
     """
-    Runs the full pipeline to generate and compress histograms.
+    Runs the full pipeline to generate a JSON file with classified profiling artifacts.
 
     Args:
         args (argparse.Namespace): Parsed command-line arguments.
@@ -159,43 +148,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
     write_output(reference_files, sample_files, output_json_path)
 
 
-def main() -> None:
-    """
-    Entry point of the script and top-level error handler.
-
-    Parses command-line arguments and runs the processing pipeline.
-    Handles and categorizes known exceptions, writes error messages to stderr,
-    and exits with appropriate status codes:
-
-    Exit Codes:
-        1: PipelineError, any other unexpected error
-        2: InvalidReferenceCountError
-        4: StageResetError, ArtifactDiscoveryError, OutputWriteError
-        5: FileNotFoundError
-    """
-    args = parse_arguments()
-    try:
-        run_pipeline(args)
-    except InvalidReferenceCountError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(2)
-    except (
-        utils.OutputResetError,
-        ArtifactDiscoveryError,
-        utils.OutputWriteError,
-    ) as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(4)
-    except FileNotFoundError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(5)
-    except utils.PipelineError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+
+    utils.parse_args_and_run(parse_arguments, run_pipeline)

@@ -9,30 +9,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "u
 import utils
 
 
-class UnsupportedFileFormatError(utils.PipelineError):
-    """
-    Raised when an unsupported profile file format is encountered.
-    """
-
-    pass
-
-
-class HistoParseError(utils.PipelineError):
-    """
-    Raised when parsing a .histo file fails.
-    """
-
-    pass
-
-
-class JavaToolError(utils.PipelineError):
-    """
-    Raised when a Java tool fails to parse a JFR file.
-    """
-
-    pass
-
-
 def parse_arguments() -> argparse.Namespace:
     """
     Parses command-line arguments.
@@ -63,6 +39,11 @@ def parse_arguments() -> argparse.Namespace:
         default=97,
         help="Percentage for hotness compression (0-100) (default: 97)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full traceback on error for debugging purposes"
+    )
     return parser.parse_args()
 
 
@@ -77,7 +58,7 @@ def build_histo_from_profile(json_entry: dict) -> dict:
         dict: Histogram mapping function names to counts.
 
     Raises:
-        UnsupportedFileFormatError: If the source file format is unsupported.
+        PipelineError: If the source file format is unsupported.
     """
     file_path = str(json_entry["source_file"])
     file_extension = os.path.splitext(file_path)[1][1:]
@@ -86,17 +67,17 @@ def build_histo_from_profile(json_entry: dict) -> dict:
     elif file_extension == "jfr":
         return build_from_jfr(file_path)
     else:
-        raise UnsupportedFileFormatError("Unsupported file format")
+        raise utils.PipelineError(f"Unsupported file format - {file_extension}")
 
 
 def parse_raw_histo_line(
-    file_path: str, line: str, line_num: int
+    file_path: utils.Path, line: str, line_num: int
 ) -> Optional[Tuple[str, int]]:
     """
     Parses a single line from a .histo file.
 
     Args:
-        file_path (str): Path to the .histo file.
+        file_path (utils.Path): Path to the .histo file.
         line (str): Line content to parse.
         line_num (int): Current line number (used for error reporting).
 
@@ -105,7 +86,7 @@ def parse_raw_histo_line(
             or None if the line is a comment or empty.
 
     Raises:
-        HistoParseError: If the line is invalid or count conversion fails.
+        PipelineError: If the line is invalid or count conversion fails.
     """
     line = line.strip()
     if not line or line.startswith("#"):
@@ -116,27 +97,27 @@ def parse_raw_histo_line(
         try:
             return parts[0], int(parts[1])
         except ValueError:
-            raise HistoParseError(
+            raise utils.PipelineError(
                 f"Invalid number format in file '{file_path}' at line {line_num}: {line}"
             )
     else:
-        raise HistoParseError(
+        raise utils.PipelineError(
             f"Invalid line in file '{file_path}' at line {line_num}: {line}"
         )
 
 
-def build_from_raw_histo(file_path: str) -> dict:
+def build_from_raw_histo(file_path: utils.Path) -> dict:
     """
     Builds a histogram dictionary from a raw .histo file.
 
     Args:
-        file_path (str): Path to the .histo file.
+        file_path (utils.Path): Path to the .histo file.
 
     Returns:
         dict: Histogram of function names to counts.
 
     Raises:
-        HistoParseError: If reading or parsing the file fails.
+        PipelineError: If reading or parsing the file fails.
     """
     try:
         with utils.open_with_default_encoding(file_path, "r") as f:
@@ -148,21 +129,21 @@ def build_from_raw_histo(file_path: str) -> dict:
                     data.append((identifier, count))
             return {func: val for func, val in data}
     except Exception as e:
-        raise HistoParseError(f"Error reading the file {file_path}: {e}")
+        raise utils.PipelineError(f"Error reading the file {file_path}: {e}")
 
 
-def build_from_jfr(file_path: str) -> dict:
+def build_from_jfr(file_path: utils.Path) -> dict:
     """
     Extracts a histogram from a .jfr file using an external Java tool.
 
     Args:
-        file_path (str): Path to the .jfr file.
+        file_path (utils.Path): Path to the .jfr file.
 
     Returns:
         dict: Histogram parsed from the JFR output.
 
     Raises:
-        JavaToolError: If the Java tool fails or returns invalid output.
+        PipelineError: If the Java tool fails or returns invalid output.
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     java_name = os.path.join(current_dir, "JFRParser.java")
@@ -173,7 +154,7 @@ def build_from_jfr(file_path: str) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return json.loads(result.stdout)
     except subprocess.CalledProcessError as e:
-        raise JavaToolError(f"Failed to parse JFR file {file_path}: {e.stderr}")
+        raise utils.PipelineError(f"Failed to parse JFR file {file_path}: {e.stderr}")
 
 
 def build_histos(profiles: list) -> list:
@@ -330,44 +311,5 @@ def run_pipeline(args: argparse.Namespace) -> None:
     utils.save_json(compressed_result, output_path)
 
 
-def main() -> None:
-    """
-    Entry point of the script and top-level error handler.
-
-    Parses command-line arguments and runs the processing pipeline.
-    Handles and categorizes known exceptions, writes error messages to stderr,
-    and exits with appropriate status codes:
-
-    Exit Codes:
-        1: PipelineError, any other unexpected error
-        2: InvalidReferenceCountError
-        4: StageResetError, ArtifactDiscoveryError, OutputWriteError
-        5: FileNotFoundError
-    """
-    try:
-        args = parse_arguments()
-        run_pipeline(args)
-    except (UnsupportedFileFormatError, utils.InvalidInputDataError) as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(2)
-    except (
-        HistoParseError,
-        JavaToolError,
-        utils.OutputResetError,
-        utils.OutputWriteError,
-    ) as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(4)
-    except FileNotFoundError as e:
-        sys.stderr.write(f"[ERROR] File not found: {e}\n")
-        sys.exit(5)
-    except utils.PipelineError as e:
-        sys.stderr.write(f"[ERROR] {e}\n")
-        sys.exit(1)
-    except Exception as e:
-        sys.stderr.write(f"[ERROR] An unexpected error occurred: {e}\n")
-        sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+    utils.main(parse_arguments, run_pipeline)
