@@ -48,7 +48,7 @@ export SAMPLE_ARTIFACT_DEPTH=2                # How many directories up from sam
 ```bash
 mkdir -p $TOOL_DIR
 mkdir -p $WORK_DIR
-git clone http://gitlab.sberlab.nsu.ru/ilmat192/selector.git $TOOL_DIR
+git clone https://github.com/m1Myp/selector.git $TOOL_DIR
 pip install -r $TOOL_DIR/selector/requirements.txt
 ```
 
