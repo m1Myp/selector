@@ -1,83 +1,91 @@
 # Selector
 
-**Selector** — это инструмент для разбиения целевого профиля во взвешенную сумму профилей юнит-тестов. Построен в виде пайплайна из четырёх скриптов.
+**Selector** is a tool for decomposing a target profile into a weighted sum of unit test profiles. It is implemented as a pipeline consisting of four scripts.
 
-## 📦 Структура проекта
+## 📦 Project Structure
 
 ```
 selector/
 ├── stage1/    
-│       └── find_files.py   # Поиск и систематизация исходных профилей
+│       └── find_files.py           # Search and organize source profiles
 ├── stage2/
-│       └── build_histo.py  # Преобразование исходных профилей во внутренней представление (гистограммы), компрессия
-│       └── JFRParser.java   # Исполняемый java-файл, который реализует алгоритм преобразования JFR-файлов в гистограммы, используемые на этапе построения гистограмм
+│       ├── build_histo.py          # Convert source profiles into internal representation (histograms), compression
+│       ├── JFRParser.java          # Executable Java file implementing the algorithm to convert JFR files into histograms used in the histogram building stage
+│       └── input_file_schema.json  # Schema for validating input file for build_histo.py
 ├── stage3/
-│       └── solve_math.py   # Решение задачи разложения в терминах гистограмм
+│       ├── solve_math.py           # Solve the decomposition problem in terms of histograms
+│       └── input_file_schema.json  # Schema for validating input file for solve_math.py
 ├── stage4/
-│       └── postprocess.py  # Формирование выходного набора артефактов
+│       ├── postprocess.py          # Generate the final set of artifacts
+│       └── input_file_schema.json  # Schema for validating input file for postprocess.py
 ├── utils/
-│       └── utils.py        # Содержит функции, которые используются в нескольких файлах на различных стадиях.
+│       └── utils.py                # Contains functions used across multiple files at various stages
 ```
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
-### 1. Установи переменные окружения
+### 1. Set Environment Variables
 
 ```bash
 # Base
-export TOOL_DIR="$(pwd)/tools"                # Директория, где хранятся скрипты
-export WORK_DIR="$(pwd)/work_dir"             # Директория, куда мы складываем текущие артефакты и выходные артефакты
-export SAMPLE_DIR="/home/user/profiles"       # Все профили кроме целевых считаются профилями юнит-тестов (шаг 1)
-export REFERENCE_DIR="$SAMPLE_DIR/reference"  # Внутри директории ожидается ровно один профиль, который является целевым (шаг 1)
+export TOOL_DIR="$(pwd)/tools"                # Directory where scripts are stored
+export WORK_DIR="$(pwd)/work_dir"             # Directory for current and output artifacts
+export SAMPLE_DIR="/home/user/profiles"       # All profiles except target ones are considered unit test profiles (stage 1)
+export REFERENCE_DIR="$SAMPLE_DIR/reference"  # This directory should contain exactly one profile, which is the target (stage 1)
 # Advanced (have defaults)
-export LOOKUP_MASK="*.jfr"                    # Маска идентефецирующая профиль (шаг 1)
-export BLOCK_COMPRESSION=true                 # Выбор сжимать ли в гистограммах идущие подряд идентификаторы с одним и тем же значением в одну (шаг 2)
-export HOTNESS_COMPRESSION=97                 # До скольки процентов самых горячих идентификаторов сжимать профили (шаг 2) 
-export MIN_SIMILARITY=95                      # Минимальная целевая похожесть в процентах (шаг 3)
-export MAX_SELECTED_SAMPLES=5                 # Ограничения на максимальное колличество юнит-тестов (шаг 3)
-export REFERENCE_ARTIFACT_DEPTH=2             # Насколько папок вверх от reference файла будут копироваться артефакты (шаг 4) 
-export SAMPLE_ARTIFACT_DEPTH=2                # Насколько папок вверх от sample файлов будут копироваться артефакты (шаг 4) 
+export LOOKUP_MASK="*.jfr"                    # Mask identifying profiles (stage 1)
+export BLOCK_COMPRESSION=true                 # Whether to compress consecutive identifiers with the same value into blocks (stage 2)
+export HOTNESS_COMPRESSION=97                 # Percentage of the hottest identifiers to keep when compressing profiles (stage 2) 
+export MIN_SIMILARITY=95                      # Minimum target similarity percentage (stage 3)
+export MAX_SELECTED_SAMPLES=5                 # Maximum number of unit tests to select (stage 3)
+export TIME_LIMIT_SECONDS=60                  # Time limit for solving the optimization problem (stage 3)
+export THREADS_COUNT=4                        # Number of threads for parallel linear programming (stage 3) 
+export REFERENCE_ARTIFACT_DEPTH=2             # How many directories up from the reference file to copy artifacts (stage 4) 
+export SAMPLE_ARTIFACT_DEPTH=2                # How many directories up from sample files to copy artifacts (stage 4) 
 ```
 
-### 2. Подготовь окружение
+### 2. Prepare Environment
 ```bash
 mkdir -p $TOOL_DIR
+mkdir -p $WORK_DIR
 git clone http://gitlab.sberlab.nsu.ru/ilmat192/selector.git $TOOL_DIR
 pip install -r $TOOL_DIR/selector/requirements.txt
 ```
 
-### 3. Выполни шаги пайплайна по очереди
+### 3. Execute Pipeline Steps Sequentially
 
 ```bash
-python $TOOL_DIR/stage1/find_files.py                     \
+python3 $TOOL_DIR/stage1/find_files.py                    \
     --sample-dir=$SAMPLE_DIR                              \
     --reference-dir=$REFERENCE_DIR                        \
     --lookup-mask=$LOOKUP_MASK                            \
     --work-dir=$WORK_DIR
     
 
-python $TOOL_DIR/stage2/build_histo.py                    \
+python3 $TOOL_DIR/stage2/build_histo.py                   \
     --block-compression=$BLOCK_COMPRESSION                \
     --hotness-compression=$HOTNESS_COMPRESSION            \
     --work-dir=$WORK_DIR
 
-python $TOOL_DIR/stage3/solve_math.py                     \
+python3 $TOOL_DIR/stage3/solve_math.py                    \
     --min-similarity=$MIN_SIMILARITY                      \
     --max-selected-samples=$MAX_SELECTED_SAMPLES          \
+    --time-limit-seconds=$TIME_LIMIT_SECONDS              \
+    --threads-count=$THREADS_COUNT                        \
     --work-dir=$WORK_DIR
 
-python $TOOL_DIR/stage4/postprocess.py                    \
+python3 $TOOL_DIR/stage4/postprocess.py                   \
     --reference-artifact-depth=$REFERENCE_ARTIFACT_DEPTH  \
     --sample-artifact-depth=$SAMPLE_ARTIFACT_DEPTH        \
     --work-dir=$WORK_DIR
 ```
 
-## 🔍 Что делает каждый этап?
+## 🔍 What Each Stage Does?
 
-### 🔹 Этап 1: `find_files.py`
-Этот скрипт находит все файлы профилей по заданной маске `$LOOKUP_MASK`. Он классифицирует их как reference или sample и сохраняет информацию в JSON.
+### 🔹 Stage 1: `find_files.py`
+This script finds all profile files matching the $LOOKUP_MASK pattern. It classifies them as reference or sample and saves the information in JSON.
 
-Пример структуры JSON на выходе:
+Example output JSON structure:
 ```json
 [
   {
@@ -90,30 +98,30 @@ python $TOOL_DIR/stage4/postprocess.py                    \
   }
 ]
 ```
-Скрипт сначала ищет и идентифицирует reference файл, затем находит все sample файлы (всё что не является reference) и сохраняет пути к ним в файл `$WORK_DIR/stages/files.json`.
+The script first identifies the reference file, then finds all sample files (everything that's not reference) and saves their paths to `$WORK_DIR/stages/files.json`.
 
-### 🔹 Этап 2: `build_histo.py`
-Преобразует найденные файлы профиля в формат гистограмм для дальнейшей работы. Скрипт не генерирует сами гистограммы, а извлекает их из профилей и сохраняет их в JSON файл для дальнейшей обработки.
+### 🔹 Stage 2: `build_histo.py`
+Converts the found profile files into histogram format for further processing. The script doesn't generate histograms but extracts them from profiles and saves them in a JSON file.
 
-Компрессия настраивается через параметры командной строки:
+Compression is configured via command-line parameters:
 
-- `$BLOCK_COMPRESSION`: Выбор сжимать ли в гистограммах идущие подряд идентефикаторы с одинаковым количеством вызовов в одну (по умолчанию `true`).
+- `$BLOCK_COMPRESSION`: Whether to compress consecutive identifiers with the same call count into blocks (default `true`).
 
-- `$HOTNESS_COMPRESSION`: До скольки процентов самых "горячих" идентификаторов сжимать профили (по умолчанию `97`).
+- `$HOTNESS_COMPRESSION`: Percentage of the hottest identifiers to keep when compressing profiles (default `97`).
 
-#### Формат входных файлов
+#### Supported Input File Formats
 
-Поддерживаются следующие типы входных файлов:
+The following input file types are supported:
 
-- `.jfr` — Java Flight Recorder файлы  
-- `.histo` — уже сгенерированные гистограммы  
-- `.???` — для поддержки новых форматов, реализуйте `build_from_???()` и добавьте его в `build_histo_from_profile()`
+- `.jfr` — Java Flight Recorder files 
+- `.histo` — pre-generated histograms
+- `.???` — to support new formats, implement `build_from_???()` and add it to `build_histo_from_profile()`
 
-#### Структура гистограмм
+#### Histogram Structure
 
-Каждая гистограмма в файле JSON представляет собой пару "идентификатор — количество вызовов". 
+Each histogram in the JSON file represents a pair of "identifier - call count".
 
-Структура гистограммы выглядит следующим образом:
+Example histogram structure:
 
 ```json
 {
@@ -125,11 +133,11 @@ python $TOOL_DIR/stage4/postprocess.py                    \
 }
 ```
 
-#### Выходные файлы
+#### Output Files
 
-Скрипт сохраняет результаты в формате JSON в файл `$WORK_DIR/stages/histos.json`. 
+The script saves results in JSON format to `$WORK_DIR/stages/histos.json`. 
 
-Пример структуры JSON на выходе:
+Example output JSON structure:
 
 ```json
 [
@@ -154,23 +162,23 @@ python $TOOL_DIR/stage4/postprocess.py                    \
 ]
 ```
 
-#### Компрессия гистограмм
+#### Histogram Compression
 
-Компрессия гистограмм используется для уменьшения размера данных, что позволяет ускорить `solve_math.py`. 
+Histogram compression reduces data size, speeding up `solve_math.py`. 
 
-**Hotness Compression** позволяет сжимать гистограммы, оставляя только `N` процентов самых "горячих" (больше всего используемых) идентификаторов. Это означает, что идентификаторы с наименьшей частотой использования будут исключены из анализа. 
+**Hotness Compression** keeps only the top `N` percent of the hottest (most frequently used) identifiers. This means identifiers with the lowest usage frequency are excluded from analysis.
 
-По умолчанию - `97%`. Это позволяет оставить только те идентификаторы, которые оказывают наибольшее влияние на выполнение программы, и избавиться от малозначимых данных, которые не влияют на разложение и анализ.
+Default is `97%`. This retains identifiers that most impact program execution while removing insignificant data.
 
-**Block Compression** используется для сжатия последовательных идентификаторов с одинаковым количеством вызовов в гистограммах, при замене значения у этих блоков равна сумме количества вызовов последовательных идентификаторов внутри этого блока. Важно, что блоки идентификаторов должны заменяться одинаково во всех гистограммах. 
+**Block Compression** compresses consecutive identifiers with the same call count into blocks, replacing their values with the sum of calls in the block. Importantly, identifier blocks must be replaced identically across all histograms.
 
-По умолчанию - `true`. Это позволяет уменьшить количество идентификаторов, взаимноодназначно заменяя их в блоки.
+Default is `true`. This reduces the number of identifiers by mutually replacing them with blocks.
 
-Пример работы **Block Compression**:
+Example of **Block Compression**:
 
-Если в гистограмме встречаются идентификаторы с одинаковыми значениями (например, идентификаторы `id1`, `id2`, `id3` с одинаковым количеством вызовов), то эти идентификаторы сжимаются в один блок, а их значения суммируются. 
+If a histogram contains identifiers with identical values (e.g.,`id1`, `id2`, `id3` with the same call count), they are compressed into one block with summed values.
 
-Например, если в гистограмме:
+For example, if the histogram is:
 
 ```
 id1 2
@@ -178,54 +186,58 @@ id2 2
 id3 2
 ```
 
-то после применения блок-компрессии мы получим:
+After block compression:
 
 ```
 id1 6
 ```
 
-Однако важно, чтобы такие блоки можно было заменять одинаково во всех файлах:
+However, blocks must be replaceable identically across all files.
 
-Если в одном файле блоки идентификаторов `id1`, `id2`, `id3` имеют одинаковые значения, но в другом файле такие составляющие блока имеют разные значения или отсутствуют, то сжатие не произойдет. Например, если в другом файле:
+If in one file the identifier blocks `id1`, `id2`, `id3` have the same values, but in another file these block components have different values or are missing, then compression will not occur. For example, if in another file:
   ```
   id1 1
   id2 2
   id3 3
   ```
-  или
+  or
   ```
   id1 2
   id3 2
   ```
-то сжатия не будет, так как блоки не могут быть склеены во всех файлах из-за несоответствия значений или отсутствующих идентификаторов.
+then no compression will happen because the blocks cannot be merged across all files due to mismatched values or missing identifiers.
 
-Однако, если во всех файлах блоки идентификаторов присутствуют с одинаковыми значениями, или отсутсвуют сразу все идентификаторы, состоящие в блоке, то блок-компрессия пройдет корректно. Например, если второй файл содержит:
+However, if in all files the identifier blocks are present with the same values, or if all the identifiers that make up the block are missing at once, then block compression will proceed correctly. For example, if the second file contains:
   ```
   id1 8
   id2 8
   id3 8
   ```
-то замена пройдет правильно, и итоговая гистограмма будет:
+then the replacement will work correctly, and the resulting histogram will be:
 ```
 id1 24
 ```
 
-### 🔹 Этап 3: `solve_math.py`
+### 🔹 Stage 3:  `solve_math.py`
 
-Скрипт решает математическую часть задачи с помощью ЗЛП с бинарной переменной. 
+This script solves the mathematical part of the problem using linear programming with binary variables.
 
-Параметры:
+Parameters:
 
-- `$MAX_SELECTED_SAMPLES`: Максимальное количество sample файлов, которые мы выберем. (По умолчанию `5`)
+- `$MAX_SELECTED_SAMPLES`: Maximum number of sample files to select (default `5`)
 
-- `$MIN_SIMILARITY`: Минимальная схожесть в процентах для выбора sample файлов. (По умолчанию `95`)
+- `$MIN_SIMILARITY`: Minimum similarity percentage for selecting sample files (default `95`)
 
-Задача заключается в том, чтобы выбрать колличество (не превыщающим `MAX_SELECTED_SAMPLES`) sample файлов с некоторыми весами, чтобы схожесть взвешшеной суммы с целевым профилем достигла `MIN_SIMILARITY`. 
-В случае недостижения требуемой схожести выбирается максимально возможное количество sample файлов, и определяется максимально возможная схожесть.
+- `$TIME_LIMIT_SECONDS`: Maximum time in seconds for the linear programming algorithm (default`60`)
 
-После выполнения задачи скрипт генерирует файл с весами для выбранных sample файлов `$WORK_DIR/stages/weight.json` и итоговой схожестью полученного разложения.
+- `$THREADS_COUNT`: Number of threads for parallel linear programming (default `4`)
 
-Пример структуры JSON на выходе:
+The goal is to select a number of sample files (not exceeding `MAX_SELECTED_SAMPLES`)  with weights such that the similarity of the weighted sum to the target profile reaches `MIN_SIMILARITY`. 
+If the required similarity isn't achieved, the maximum possible number of sample files is selected, and the highest possible similarity is determined.
+
+After execution, the script generates a file with weights for selected samples `$WORK_DIR/stages/weight.json` and the final similarity of the decomposition.
+
+Example output JSON structure:
 ```json
 {
   "reference_file": "/home/user/profiles/reference/profile.jfr",
@@ -242,123 +254,131 @@ id1 24
   ]
 }
 ```
-#### Математическая постановка задачи
+#### Mathematical Problem Formulation
 
-Задача оптимизации сводится к задаче минимизации отклонений между взвешенной суммой гистограмм тестов и целевой гистограммой. Пусть:
+The optimization problem minimizes deviations between the weighted sum of test histograms and the target histogram. Let:
 
-- $` ID = \{id_1, id_2, \dots, id_n\} `$ - это набор всех встречающихся идентификаторов.
+- $` ID = \{id_1, id_2, \dots, id_n\} `$ be the set of all encountered identifiers.
 
-- $` S = \{s_1, s_2, ..., s_n\} `$ — это набор вектор-гистограмм sample файлов. Каждый элемент вектор-гистограммы теста $` i `$ ($` s_i `$) — это вектор чисел $` s_i = [s_{i1}, s_{i2}, ..., s_{in}] `$ с вещественными значениями $` s_{ij} \in \mathbb{R} `$.
+- $` S = \{s_1, s_2, ..., s_n\} `$ be the set of vector histograms of the sample files. Each element of the test histogram vector $` s_i `$ is a vector of numbers $` s_i = [s_{i1}, s_{i2}, ..., s_{in}] `$ with real values $` s_{ij} \in \mathbb{R} `$.
 
-- $` T = [t_1, t_2, ..., t_n] `$ — это целевой вектор-гистограмма. Каждый элемент $` t_j \in \mathbb{R} `$ представляет целевое значение по $` j `$-й характеристике.
+- $` T = [t_1, t_2, ..., t_n] `$ is the target vector histogram. Each element $` t_j \in \mathbb{R} `$ represents the target value for the $` j `$-th feature.
 
-Элементы $ t_j $ и $ s_{ij} $ входят в набор $ ID $ взаимно однозначно, то есть для каждого $ j $ в $ T $ и $ i $, $ j $ в $ S $, существует уникальное соответствие $ t_j \leftrightarrow id_j $ и $ s_{ij} \leftrightarrow id_j $, где $ j $-й элемент гистограммы $ T $ и $ s_{ij} $ из гистограммы $ s_i $ оба соответствуют одному и тому же идентификатору $ id_j \in ID $. 
+The elements $ t_j $ and $ s_{ij} $ correspond one-to-one to the set $ ID $, meaning that for each $ j $ in $ T $ and each $ i $, $ j $ in $ S $, there exists a unique correspondence $ t_j \leftrightarrow id_j $ and $ s_{ij} \leftrightarrow id_j $, where the $ j $-th element of histogram $ T $ and $ s_{ij} $ from histogram $ s_i $ both correspond to the same identifier $ id_j \in ID $. 
 
-- $` w = [w_1, w_2, ..., w_n] `$ — это веса тестов которые подбираются в результате оптимизации. Каждый вес — вещественное число.
+- $` w = [w_1, w_2, ..., w_n] `$ are the weights of the tests that are optimized. Each weight is a real number.
 
-- $` z = [z_1, z_2, ..., z_n] `$ — бинарные переменные, где:
+- $` z = [z_1, z_2, ..., z_n] `$ are binary variables, where:
   - $` z_i \in \{0, 1\} `$
-  - $` z_i = 1 `$ означает, что тест $` i `$ выбран
-  - $` z_i = 0 `$ означает, что тест $` i `$ не выбран
+  - $` z_i = 1 `$ means test $` i `$ is selected
+  - $` z_i = 0 `$ means test $` i `$ is not selected
 
-##### Целевая функция:
+##### Objective Function:
 
-Мы минимизируем отклонение между суммой взвешенных тестов и целевой гистограммой. Целевая функция выражается как:
+Minimize deviation between weighted sum of tests and target histogram:
 
 $$
 \text{minimize} \quad \sum_{i=1}^{n} \left| w_i \cdot s_i - T \right|
 $$
 
-где $` w_i \cdot s_i `$ — это взвешенная сумма тестов, а $` T `$ — это целевая гистограмма.
+where $` w_i \cdot s_i `$ is the weighted sum of the tests, and $` T `$ is the target histogram.
 
-##### Ограничения:
+##### Constraints:
 
-- Ограничение на веса:
+- Weight constraint:
   $`
   w_i \geq 0, \quad \forall i
   `$
   
-- Ограничение на нормализацию весов:
+- Weight normalization:
   $`
   \sum_{i=1}^{n} w_i = 1
   `$
 
-- Ограничение на бинарные переменные:
+- Binary variables:
   $`
   w_i \leq z_i, \quad \forall i
   `$
 
-  Вес $` w_i `$ может быть положительным только в случае, если тест выбран (то есть $` z_i = 1 `$).
+  Weight $` w_i `$ can only be positive if the test is selected (i.e., $` z_i = 1 `$).
 
-- Ограничение на количество выбранных тестов:
+- Maximum selected tests:
   $`
   \sum_{i=1}^{n} z_i \leq \text{max\_selected\_samples}
   `$
 
-### 🔹 Этап 4: `postprocess.py`
+### 🔹 Stage 4: `postprocess.py`
 
-Скрипт на основе `weight.json` копирует артефакты в итоговые папки и создает файл weight. 
+Based on `weight.json`, this script copies artifacts to final directories and creates a weight file.
 
-Параметры:
+Parameters:
 
-- `$REFERENCE_ARTIFACT_DEPTH`: Насколько папок вверх от reference файлов будут копироваться артефакты. (По умолчанию `2`)
+- `$REFERENCE_ARTIFACT_DEPTH`: How many directories up from reference files to copy artifacts (default `2`)
 
-- `$SAMPLE_ARTIFACT_DEPTH`: Насколько папок вверх от sample файлов будут копироваться артефакты (По умолчанию `2`)
+- `$SAMPLE_ARTIFACT_DEPTH`: How many directories up from sample files to copy artifacts (default `2`)
 
-Значения глубины:
+Depth values:
 
-- `0`: Копировать только файл профиля
-- `1 и далее`: Копировать папку со всеми файлами, на выбранной глубине от файла профиля, которая содержит файл профиля
+- `0`: Copy only the profile file
+- `1 и далее`: Copy the directory with all files at the specified depth from the profile file
 
-Cкрипт создает файл weight, а также копирует папку, которая содержит reference профиль, со всем содержимым на глубине `$REFERENCE_ARTIFACT_DEPTH` от reference профиля, а также все папки, которые содержат sample профили выбранные в weight, со всем содержимым на глубине `$SAMPLE_ARTIFACT_DEPTH` от sample профилей.
+The script creates a weight file and copies the directory containing the reference profile with all contents at depth `$REFERENCE_ARTIFACT_DEPTH`, as well as directories containing selected sample profiles with all contents at depth `$SAMPLE_ARTIFACT_DEPTH`.
 
 ```
 work_dir/
 ├── weight
 ├── reference/
-│       └── profile.jfr
+│       ├── profile.jfr
 │       └── artifact1
 ├── sample1/
-│       └── profile.jfr
-│       └── artifact_folder1/
+│       ├── profile.jfr
+│       ├── artifact_folder1/
 │       │       └── artifact2
 ├── sample2/
-│       └── profile.jfr
+│       ├── profile.jfr
 │       └── artifact_folder2/
 ```
 
-Файл `weight` представляет собой пару "имя папки в `$WORK_DIR/` — вес профиля теста внутри этой папки". 
+The `weight` file contains pairs of "folder name in `$WORK_DIR/` - weight of the test profile inside this folder".
 
-Структура `weight` выглядит следующим образом:
+Example `weight` file:
 
 ```
 sample1 0.33
 sample2 0.67
 ```
 
-## 🧪 Пример структуры входных данных
+## 🧪 Example Input Structure
 ```
 profiles/
 ├── reference/
-│       └── profile.jfr
+│       ├── profile.jfr
 │       └── artifact1
 ├── sample1/
-│       └── profile.jfr
-│       └── artifact_folder1/
+│       ├── profile.jfr
+│       ├── artifact_folder1/
 │       │       └── artifact2
 ├── sample2/
-│       └── profile.jfr
+│       ├── profile.jfr
 │       └── artifact_folder2/
 ```
 
-## 💡 Особенности
+## 💡 Features
 
-- Возможность запуска каждого шага отдельно
-- Поддержка сжатия гистограмм
-- JSON-форматы для промежуточных данных
+- Ability to run each step separately
+- Histogram compression support
+- JSON formats for intermediate data
 
-## 📧 Обратная связь
+## 🛠️ Debugging
 
-Разработка: **Timur Ilyinykh**  
-При поддержке **Dmitrii Silin**, **Ilya Matveev**
+For debugging, use these flags:
+- `--debug`: shows full stack trace on any error (all stages)
+- `--verbose`: displays logs of the mathematical solution (stage 3)
+
+## 📧 Feedback
+
+Development: **Timur Ilyinykh**  
+With support from **Dmitrii Silin**, **Ilya Matveev**
+
 Telegram: **@ElfHunterAO**
+Email: **timm00100@gmail.com**

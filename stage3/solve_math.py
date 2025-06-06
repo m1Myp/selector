@@ -1,11 +1,12 @@
-import os
 import sys
+import json
 import argparse
 import numpy as np
 import cvxpy as cp
 from typing import List, Tuple, Dict
+from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utils")))
+sys.path.append(str(Path(__file__).resolve().parent.parent / "utils"))
 import utils
 
 
@@ -20,11 +21,10 @@ def parse_arguments() -> argparse.Namespace:
         description="Optimize sample files weights for similarity to target histogram"
     )
     parser.add_argument(
-        "--work-dir",
-        type=str,
-        required=True,
-        help="Working directory containing stages/histos.json;"
-        "also used as the output directory for stages/weight.json",
+        "--min-similarity",
+        type=float,
+        default=95.0,
+        help="Minimum similarity threshold (0-100%) (default: 95.0)",
     )
     parser.add_argument(
         "--max-selected-samples",
@@ -33,15 +33,33 @@ def parse_arguments() -> argparse.Namespace:
         help="Maximum number of selected sample files (default: 5)",
     )
     parser.add_argument(
-        "--min-similarity",
-        type=float,
-        default=95.0,
-        help="Minimum similarity threshold (0-100%) (default: 95.0)",
+        "--time-limit-seconds",
+        type=int,
+        default=60,
+        help="Maximum time limit for solver in seconds (default: 60)",
+    )
+    parser.add_argument(
+        "--threads-count",
+        type=int,
+        default=4,
+        help="Maximum number of threads for solver (default: 4)",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        required=True,
+        help="Working directory containing stages/histos.json;"
+        "also used as the output directory for stages/weight.json",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logs from the solver",
     )
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="Print full traceback on error for debugging purposes"
+        help="Print full traceback on error for debugging purposes",
     )
     return parser.parse_args()
 
@@ -71,88 +89,84 @@ def compute_similarity(a: np.ndarray, b: np.ndarray) -> float:
     Returns:
         float: Similarity score between the two vectors.
     """
-    return float(np.sum(np.minimum(a, b)))
+    return np.minimum(a, b).sum().item()
 
 
 def load_histograms(
-    input_path: utils.Path,
-) -> Tuple[Dict[str, Dict[str, int]], List[Dict[str, Dict[str, int]]], List[str], Dict[str, int]]:
+    input_path: Path,
+) -> Tuple[
+    utils.HistosJsonEntry,
+    List[utils.HistosJsonEntry],
+    List[str],
+    Dict[str, int],
+]:
     """
     Loads histograms from the specified JSON file.
 
     Args:
-        input_path (utils.Path): Path to the input JSON file.
+        input_path (Path): Path to the input JSON file.
 
     Returns:
-        Tuple[List[Dict[str, int]], utils.Path, List[Dict[str, int]], List[str], Dict[str, int]]:
-            - reference_histo (Dict[Dict[<histo_identificator>, <histo_counter>]]):
-             Reference histogram with source_file which could be string.
-            - samples (List[Dict[str, int]]): List of sample histograms.
+        Tuple[utils.HistosJsonEntry, List[utils.HistosJsonEntry], List[str], Dict[str, int]]:
+            - reference (utils.HistosJsonEntry): JSON entry for the reference histogram.
+            - samples (List[utils.HistosJsonEntry]): List of JSON entries for sample histograms.
             - all_ids (List[str]): List of all unique IDs across histograms.
-            - identifiers_to_index (Dict[str, int]): Mapping of IDs to indices.
+            - identifiers_to_index (Dict[str, int]): Mapping from each ID to its index.
 
     Raises:
-        ValueError: If the reference histogram is empty.
-
-    TODO Histogramma как класс в utils.
-    TODO TypeAlyas? либо DataClass
-    TODO опенсорс библиотека по валидации жсона по наличии ключей, валидации их типов и непустоты значений
-    utils.Histogram
+        ValueError: If the reference histogram is missing, duplicated, empty, or if no sample histograms are found.
     """
     data = utils.load_files_json(input_path)
 
-    required_keys = {"type", "histo", "source_file"}
-    for json_entry in data:
-        utils.input_json_validation(json_entry, required_keys)
+    schema_path = Path(__file__).resolve().parent / "input_file_schema.json"
+    with utils.open_with_default_encoding(schema_path, "r") as f:
+        input_file_schema = json.load(f)
+    utils.validate_json(data, input_file_schema)
 
-    reference = next((d for d in data if d["type"] == "reference"), None)
-    if reference is None:
+    references = [d for d in data if d["type"] == "reference"]
+    if not references:
         raise ValueError("No reference histogram found.")
-
-    if not reference.get("histo"):
+    if len(references) > 1:
         raise ValueError(
-            f"Reference histogram is empty in '{reference.get('source_file', '<unknown>')}'"
+            f"Expected exactly one reference histogram, found: {len(references)}, {references}."
         )
+    reference = references[0]
+    if not reference.get("histo"):
+        raise ValueError("Reference histogram is empty.")
 
-    samples = [
-        d
-        for d in data
-        if d["type"] == "sample"
-        and d.get("histo")
-        and isinstance(d["histo"], dict)
-        and len(d["histo"]) > 0
-    ]
+    samples = [d for d in data if d["type"] == "sample" and d["histo"]]
 
     if not samples:
-        raise ValueError("No valid sample histograms found.")
+        raise ValueError("Sample histograms not found.")
 
-    all_identifiers = sorted(
-        set().union(reference["histo"].keys(), *(d["histo"].keys() for d in samples))
+    all_ids = sorted(
+        set(reference["histo"].keys()).union(*(s["histo"].keys() for s in samples))
     )
-    identifiers_to_index = {id_: i for i, id_ in enumerate(all_identifiers)}
+    identifiers_to_index = {id_: i for i, id_ in enumerate(all_ids)}
 
     if isinstance(reference.get("source_file"), int):
         reference["source_file"] = str(reference["source_file"])
 
-    return reference, samples, all_identifiers, identifiers_to_index
+    return reference, samples, all_ids, identifiers_to_index
 
 
 def prepare_vectors(
-    reference: Dict, samples: List[Dict], identifiers_to_index: Dict[str, int]
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    reference: utils.HistosJsonEntry,
+    samples: List[utils.HistosJsonEntry],
+    identifiers_to_index: Dict[str, int],
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Prepares the target vector and sample vectors based on the histograms.
 
     Args:
-        reference (Dict): The reference histogram.
-        samples (List[Dict]): List of sample histograms.
-        identifiers_to_index (Dict[str, int]): Mapping of IDs to indices.
+        reference (utils.HistosJsonEntry): JSON entry for the reference histogram.
+        samples (List[utils.HistosJsonEntry]): List of JSON entries for sample histograms.
+        identifiers_to_index (Dict[str, int]): Mapping from each ID to its index.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray, List[str]]:
+        Tuple[np.ndarray, np.ndarray]:
             - target (np.ndarray): The normalized target vector.
             - sample_vectors (np.ndarray): Array of sample vectors.
-            - paths (List[str]): List of file paths for each sample.
     """
     target = np.zeros(len(identifiers_to_index))
     for k, v in reference["histo"].items():
@@ -160,20 +174,23 @@ def prepare_vectors(
     target = normalize(target)
 
     sample_vectors = []
-    paths = []
     for sample in samples:
         vec = np.zeros(len(identifiers_to_index))
         for k, v in sample["histo"].items():
             vec[identifiers_to_index[k]] = v
         vec = normalize(vec)
         sample_vectors.append(vec)
-        paths.append(sample["source_file"])
 
-    return target, np.array(sample_vectors), paths
+    return target, np.array(sample_vectors)
 
 
 def solve_optimization(
-    sample_vectors: np.ndarray, target: np.ndarray, max_selected: int
+    sample_vectors: np.ndarray,
+    target: np.ndarray,
+    max_selected: int,
+    time_limit: int,
+    threads: int,
+    verbose: bool,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Solves the optimization problem to find the best weights for matching the target histogram.
@@ -182,6 +199,9 @@ def solve_optimization(
         sample_vectors (np.ndarray): Array of sample vectors.
         target (np.ndarray): The target vector to match.
         max_selected (int): Maximum number of samples to select.
+        time_limit (int): Time limit for the solver in seconds.
+        threads (int): Maximum number of threads the solver can use.
+        verbose (bool): Whether to enable verbose logging from the solver.
 
     Returns:
         Tuple[np.ndarray, np.ndarray]:
@@ -196,41 +216,59 @@ def solve_optimization(
     z = cp.Variable(n, boolean=True)
 
     constraints = [w >= 0, w <= z, cp.sum(z) <= max_selected, cp.sum(w) == 1]
-
     objective = cp.Minimize(cp.sum(cp.abs(sample_vectors.T @ w - target)))
     problem = cp.Problem(objective, constraints)
-    problem.solve(solver=cp.CBC)
+
+    scip_params = {
+        "limits/time": time_limit,
+        "parallel/maxnthreads": threads,
+    }
+    if verbose:
+        scip_params.update(
+            {
+                "display/verblevel": 5,
+                "display/freq": 1,
+            }
+        )
+
+    problem.solve(
+        solver=cp.SCIP,
+        scip_params=scip_params,
+        verbose=verbose,
+    )
 
     if problem.status not in [cp.OPTIMAL, cp.OPTIMAL_INACCURATE]:
-        raise RuntimeError("Optimization failed")
+        raise RuntimeError("Optimization failed.")
 
     return w.value, sample_vectors.T @ w.value
 
 
 def write_output(
-    output_path: utils.Path,
-    reference_file: utils.Path,
+    output_path: Path,
+    reference_file_path: Path,
+    sample_files_paths: List[Path],
     similarity: float,
     weights: np.ndarray,
-    paths: List[utils.Path],
 ) -> None:
     """
     Writes the optimization results to a JSON file, rounding weights to 4 decimals
     and adjusting to ensure the sum is exactly 1.0.
 
     Args:
-        output_path (utils.Path): Path to the output JSON file.
-        reference_file (utils.Path): Path to the reference file.
+        output_path (Path): Path to the output JSON file.
+        reference_file_path (Path): Path to the reference file.
+        sample_files_paths (List[Path]): File paths for each selected sample file.
         similarity (float): Similarity score of the result.
         weights (np.ndarray): Weights for each selected sample file.
-        paths (List[utils.Path]): File paths for each selected sample file.
 
     Raises:
         ValueError: If weights cannot be normalized to sum to 1.0.
     """
 
     selected_raw = [
-        (paths[i], weights[i]) for i in range(len(weights)) if weights[i] > 1e-6
+        (sample_files_paths[i], weights[i])
+        for i in range(len(weights))
+        if weights[i] > 1e-6
     ]
 
     rounded_weights = [round(w, 4) for _, w in selected_raw]
@@ -244,7 +282,7 @@ def write_output(
                 rounded_weights[i] = adjusted
                 break
         else:
-            raise ValueError("Unable to normalize weights to sum to 1.0")
+            raise ValueError("Unable to normalize weights to sum to 1.0.")
 
     selected = [
         {"sample_path": selected_raw[i][0], "weight": rounded_weights[i]}
@@ -252,7 +290,7 @@ def write_output(
     ]
 
     output_weight_data = {
-        "reference_file": reference_file,
+        "reference_file": reference_file_path,
         "similarity": round(similarity, 2),
         "selected_samples": selected,
     }
@@ -262,56 +300,73 @@ def write_output(
 
 def run_pipeline(args: argparse.Namespace) -> None:
     """
-    Main pipeline to execute the entire process from loading data to saving results.
+    Runs the full pipeline to solve math task, and generating the output weight JSON file.
 
     Args:
         args (argparse.Namespace): Parsed command-line arguments.
-
-    Raises:
-        FileNotFoundError: If the optimization fails or unexpected errors occur.
     """
-
-    work_dir = os.path.abspath(args.work_dir)
+    work_dir = args.work_dir.resolve()
     max_selected_samples = args.max_selected_samples
     min_similarity = args.min_similarity
+    time_limit_seconds = args.time_limit_seconds
+    threads_count = args.threads_count
+    verbose = args.verbose
 
-    if not os.path.exists(work_dir):
-        raise FileNotFoundError(f"--work-dir={work_dir} does not exist.")
+    utils.validate_work_dir_exists(work_dir)
 
     print(f"[INFO] WORK_DIR:             {work_dir}")
     print(f"[INFO] MAX_SELECTED_SAMPLES: {max_selected_samples}")
     print(f"[INFO] MIN_SIMILARITY:       {min_similarity}")
+    print(f"[INFO] TIME_LIMIT_SECONDS:   {time_limit_seconds}")
+    print(f"[INFO] THREADS_COUNT:        {threads_count}")
 
-    input_path = os.path.join(args.work_dir, "stages", "histos.json")
-    output_path = os.path.join(args.work_dir, "stages", "weight.json")
+    input_path = work_dir / "stages" / "histos.json"
+    output_path = work_dir / "stages" / "weight.json"
 
     reference, samples, all_identifiers, identifiers_to_index = load_histograms(
         input_path
     )
-    target, sample_vectors, paths = prepare_vectors(
-        reference, samples, identifiers_to_index
-    )
+    target, sample_vectors = prepare_vectors(reference, samples, identifiers_to_index)
 
     weights, result_vector = solve_optimization(
-        sample_vectors, target, args.max_selected_samples
+        sample_vectors,
+        target,
+        max_selected_samples,
+        time_limit_seconds,
+        threads_count,
+        verbose,
     )
     result_vector = normalize(result_vector)
     similarity = compute_similarity(result_vector, target)
 
-    if similarity < args.min_similarity:
+    if similarity < min_similarity:
         print(
-            f"[INFO] Similarity {similarity:.2f}% is below the minimum threshold. Selecting maximum samples."
+            f"[INFO] Similarity {similarity:.2f}% is below the minimum threshold. Selecting maximum samples"
         )
         weights, result_vector = solve_optimization(
-            sample_vectors, target, len(sample_vectors)
+            sample_vectors,
+            target,
+            len(sample_vectors),
+            time_limit_seconds,
+            threads_count,
+            verbose,
         )
         result_vector = normalize(result_vector)
         similarity = compute_similarity(result_vector, target)
 
-    write_output(output_path, reference['source_file'], similarity, weights, paths)
+    write_output(
+        output_path,
+        reference["source_file"],
+        [sample["source_file"] for sample in samples],
+        similarity,
+        weights,
+    )
 
     print(f"[INFO] Optimization complete. Similarity: {similarity:.2f}%")
+    selected_count = sum(w > 1e-6 for w in weights)
+    total_count = len(weights)
+    print(f"[INFO] Selected samples: {selected_count} / {total_count}")
 
 
 if __name__ == "__main__":
-    utils.main(parse_arguments, run_pipeline)
+    utils.parse_args_and_run(parse_arguments, run_pipeline)

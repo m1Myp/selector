@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "required": ["reference_file", "similarity", "selected_samples"],
+  "properties": {
+    "reference_file": {
+      "type": "string",
+      "minLength": 1
+    },
+    "similarity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "selected_samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sample_path", "weight"],
+        "properties": {
+          "sample_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

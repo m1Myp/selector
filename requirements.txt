@@ -1,3 +1,5 @@
 numpy
 cvxpy
-cylp
+tqdm
+pyscipopt
+jsonschema

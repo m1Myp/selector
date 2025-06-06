@@ -1,11 +1,13 @@
-import os
 import sys
 import json
 import argparse
 import subprocess
-from typing import Optional, Tuple
+from tqdm import tqdm
+from typing import Optional, Tuple, List
+from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utils")))
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "utils"))
 import utils
 
 
@@ -18,14 +20,7 @@ def parse_arguments() -> argparse.Namespace:
                             and hotness compression percentage.
     """
     parser = argparse.ArgumentParser(
-        description="Extract histograms from profile files."
-    )
-    parser.add_argument(
-        "--work-dir",
-        type=str,
-        required=True,
-        help="Working directory containing stages/files.json;"
-        "also used as the output directory for stages/histos.json",
+        description="Extract histograms from profile files"
     )
     parser.add_argument(
         "--block-compression",
@@ -40,44 +35,50 @@ def parse_arguments() -> argparse.Namespace:
         help="Percentage for hotness compression (0-100) (default: 97)",
     )
     parser.add_argument(
+        "--work-dir",
+        type=Path,
+        required=True,
+        help="Working directory containing stages/files.json;"
+        "also used as the output directory for stages/histos.json",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
-        help="Print full traceback on error for debugging purposes"
+        help="Print full traceback on error for debugging purposes",
     )
     return parser.parse_args()
 
 
-def build_histo_from_profile(json_entry: dict) -> dict:
+def build_histo_from_profile(file_path: Path) -> utils.Histogram:
     """
     Builds a histogram from a profile entry, depending on the file extension.
 
     Args:
-        json_entry (dict): Profile entry containing a "source_file" field.
+        file_path (Path): Profile entry containing a "source_file" field.
 
     Returns:
-        dict: Histogram mapping function names to counts.
+        utils.Histogram: Histogram mapping function names to counts.
 
     Raises:
         PipelineError: If the source file format is unsupported.
     """
-    file_path = str(json_entry["source_file"])
-    file_extension = os.path.splitext(file_path)[1][1:]
+    file_extension = file_path.suffix.lstrip(".")
     if file_extension == "histo":
         return build_from_raw_histo(file_path)
     elif file_extension == "jfr":
         return build_from_jfr(file_path)
     else:
-        raise utils.PipelineError(f"Unsupported file format - {file_extension}")
+        raise utils.PipelineError(f"Unsupported file format - {file_extension}.")
 
 
 def parse_raw_histo_line(
-    file_path: utils.Path, line: str, line_num: int
+    file_path: Path, line: str, line_num: int
 ) -> Optional[Tuple[str, int]]:
     """
     Parses a single line from a .histo file.
 
     Args:
-        file_path (utils.Path): Path to the .histo file.
+        file_path (Path): Path to the .histo file.
         line (str): Line content to parse.
         line_num (int): Current line number (used for error reporting).
 
@@ -98,23 +99,23 @@ def parse_raw_histo_line(
             return parts[0], int(parts[1])
         except ValueError:
             raise utils.PipelineError(
-                f"Invalid number format in file '{file_path}' at line {line_num}: {line}"
+                f"Invalid number format in file '{file_path}' at line {line_num}: {line}."
             )
     else:
         raise utils.PipelineError(
-            f"Invalid line in file '{file_path}' at line {line_num}: {line}"
+            f"Invalid line in file '{file_path}' at line {line_num}: {line}."
         )
 
 
-def build_from_raw_histo(file_path: utils.Path) -> dict:
+def build_from_raw_histo(file_path: Path) -> utils.Histogram:
     """
     Builds a histogram dictionary from a raw .histo file.
 
     Args:
-        file_path (utils.Path): Path to the .histo file.
+        file_path (Path): Path to the .histo file.
 
     Returns:
-        dict: Histogram of function names to counts.
+        utils.Histogram: Histogram of function names to counts.
 
     Raises:
         PipelineError: If reading or parsing the file fails.
@@ -129,24 +130,24 @@ def build_from_raw_histo(file_path: utils.Path) -> dict:
                     data.append((identifier, count))
             return {func: val for func, val in data}
     except Exception as e:
-        raise utils.PipelineError(f"Error reading the file {file_path}: {e}")
+        raise utils.PipelineError(f"Error reading the file {file_path}, {e}.")
 
 
-def build_from_jfr(file_path: utils.Path) -> dict:
+def build_from_jfr(file_path: Path) -> utils.Histogram:
     """
     Extracts a histogram from a .jfr file using an external Java tool.
 
     Args:
-        file_path (utils.Path): Path to the .jfr file.
+        file_path (Path): Path to the .jfr file.
 
     Returns:
-        dict: Histogram parsed from the JFR output.
+        utils.Histogram: Histogram parsed from the JFR output.
 
     Raises:
         PipelineError: If the Java tool fails or returns invalid output.
     """
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    java_name = os.path.join(current_dir, "JFRParser.java")
+    current_dir = Path(__file__).resolve().parent
+    java_name = current_dir / "JFRParser.java"
 
     cmd = ["java", java_name, file_path]
 
@@ -154,24 +155,31 @@ def build_from_jfr(file_path: utils.Path) -> dict:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return json.loads(result.stdout)
     except subprocess.CalledProcessError as e:
-        raise utils.PipelineError(f"Failed to parse JFR file {file_path}: {e.stderr}")
+        raise utils.PipelineError(f"Failed to parse JFR file {file_path}, {e}.")
 
 
-def build_histos(profiles: list) -> list:
+def build_histos(profiles: List[utils.FilesJsonEntry]) -> List[utils.HistosJsonEntry]:
     """
     Builds histograms for each profile entry.
 
     Args:
-        profiles (list): List of profile dictionaries from files.json.
+        profiles (List[utils.FilesJsonEntry]): List of profile dictionaries from files.json.
 
     Returns:
-        list: List of dictionaries with type, source_file, and histogram data.
+        List[utils.HistosJsonEntry]: List of dictionaries with type, source_file, and histogram data.
     """
     result = []
-    required_keys = {"type", "source_file"}
-    for json_entry in profiles:
-        utils.input_json_validation(json_entry, required_keys)
-        histo = build_histo_from_profile(json_entry)
+    schema_path = Path(__file__).resolve().parent / "input_file_schema.json"
+    with utils.open_with_default_encoding(schema_path, "r") as f:
+        input_file_schema = json.load(f)
+    utils.validate_json(profiles, input_file_schema)
+    for i, json_entry in enumerate(
+        tqdm(profiles, desc="Processing profiles", unit="profiles"), start=1
+    ):
+        tqdm.write(
+            f"[INFO] Processed [{i}/{len(profiles)}]: {json_entry['source_file']}"
+        )
+        histo = build_histo_from_profile(Path(json_entry["source_file"]))
         result.append(
             {
                 "type": json_entry["type"],
@@ -182,7 +190,9 @@ def build_histos(profiles: list) -> list:
     return result
 
 
-def hotness_compress(uncompressed_result: list, hotness_compression: int) -> list:
+def hotness_compress(
+    uncompressed_result: List[utils.HistosJsonEntry], hotness_compression: int
+) -> List[utils.HistosJsonEntry]:
     """
     Applies hotness-based compression to histograms.
 
@@ -190,17 +200,17 @@ def hotness_compress(uncompressed_result: list, hotness_compression: int) -> lis
     reaches the specified hotness percentage.
 
     Args:
-        uncompressed_result (list): List of histogram entries before compression.
+        uncompressed_result (List[utils.HistosJsonEntry]): List of histogram entries before compression.
         hotness_compression (int): Threshold percentage (0–100).
 
     Returns:
-        list: Compressed histogram entries.
+        List[utils.HistosJsonEntry]: Compressed histogram entries.
 
     Raises:
         ValueError: If hotness_compression is outside the range [0, 100].
     """
     if hotness_compression < 0 or hotness_compression > 100:
-        raise ValueError("HOTNESS_COMPRESSION must be between 0 and 100")
+        raise ValueError("HOTNESS_COMPRESSION must be between 0 and 100.")
 
     if hotness_compression == 100:
         return uncompressed_result
@@ -228,15 +238,17 @@ def hotness_compress(uncompressed_result: list, hotness_compression: int) -> lis
     return result
 
 
-def block_compress(uncompressed_result: list) -> list:
+def block_compress(
+    uncompressed_result: List[utils.HistosJsonEntry],
+) -> List[utils.HistosJsonEntry]:
     """
     Compresses histogram entries by merging functions with identical profiles.
 
     Args:
-        uncompressed_result (list): List of histogram entries before compression.
+        uncompressed_result (List[utils.HistosJsonEntry]): List of histogram entries before compression.
 
     Returns:
-        list: New list of histogram entries with compressed histograms.
+        List[utils.HistosJsonEntry]: New list of histogram entries with compressed histograms.
     """
     if not uncompressed_result:
         return []
@@ -280,24 +292,20 @@ def block_compress(uncompressed_result: list) -> list:
 
 def run_pipeline(args: argparse.Namespace) -> None:
     """
-    Runs the full pipeline to generate and compress histograms.
+    Runs the full pipeline to generate and compress histograms, and generating the output histos JSON file.
 
     Args:
         args (argparse.Namespace): Parsed command-line arguments.
-
-    Raises:
-        FileNotFoundError: If the working directory does not exist.
     """
-    work_dir = os.path.abspath(args.work_dir)
+    work_dir = args.work_dir.resolve()
     hotness_compression = args.hotness_compression
     block_compression = args.block_compression.lower() == "true"
 
-    if not os.path.exists(work_dir):
-        raise FileNotFoundError(f"--work-dir={work_dir} does not exist.")
+    utils.validate_work_dir_exists(work_dir)
 
-    stages_dir = os.path.join(work_dir, "stages")
-    input_path = os.path.join(stages_dir, "files.json")
-    output_path = os.path.join(stages_dir, "histos.json")
+    stages_dir = work_dir / "stages"
+    input_path = stages_dir / "files.json"
+    output_path = stages_dir / "histos.json"
 
     print(f"[INFO] WORK_DIR:            {work_dir}")
     print(f"[INFO] HOTNESS_COMPRESSION: {hotness_compression}")
@@ -312,4 +320,4 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    utils.main(parse_arguments, run_pipeline)
+    utils.parse_args_and_run(parse_arguments, run_pipeline)
