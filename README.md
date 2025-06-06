@@ -61,7 +61,6 @@ python3 $TOOL_DIR/stage1/find_files.py                    \
     --lookup-mask=$LOOKUP_MASK                            \
     --work-dir=$WORK_DIR
     
-
 python3 $TOOL_DIR/stage2/build_histo.py                   \
     --block-compression=$BLOCK_COMPRESSION                \
     --hotness-compression=$HOTNESS_COMPRESSION            \
@@ -264,7 +263,7 @@ The optimization problem minimizes deviations between the weighted sum of test h
 
 - $` T = [t_1, t_2, ..., t_n] `$ is the target vector histogram. Each element $` t_j \in \mathbb{R} `$ represents the target value for the $` j `$-th feature.
 
-The elements $ t_j $ and $ s_{ij} $ correspond one-to-one to the set $ ID $, meaning that for each $ j $ in $ T $ and each $ i $, $ j $ in $ S $, there exists a unique correspondence $ t_j \leftrightarrow id_j $ and $ s_{ij} \leftrightarrow id_j $, where the $ j $-th element of histogram $ T $ and $ s_{ij} $ from histogram $ s_i $ both correspond to the same identifier $ id_j \in ID $. 
+The elements $` t_j `$ and $` s_{ij} `$ correspond one-to-one to the set $` ID `$, meaning that for each $` j `$ in $` T `$ and each $` i `$, $` j `$ in $` S `$, there exists a unique correspondence $` t_j \leftrightarrow id_j `$ and $` s_{ij} \leftrightarrow id_j `$, where the $` j `$-th element of histogram $` T `$ and $` s_{ij} `$ from histogram $` s_i `$ both correspond to the same identifier $` id_j \in ID `$. 
 
 - $` w = [w_1, w_2, ..., w_n] `$ are the weights of the tests that are optimized. Each weight is a real number.
 
@@ -377,8 +376,9 @@ For debugging, use these flags:
 
 ## 📧 Feedback
 
-Development: **Timur Ilyinykh**  
+Development: **Timur Ilinykh**  
 With support from **Dmitrii Silin**, **Ilya Matveev**
 
 Telegram: **@ElfHunterAO**
+
 Email: **timm00100@gmail.com**
