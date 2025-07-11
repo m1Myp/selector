@@ -59,8 +59,21 @@ def copy_artifact(source_file: Path, depth: int, destination_root: Path) -> str:
     Returns:
         str: Name of the top artifact folder copied.
     """
+
+    if depth < 0:
+        raise ValueError(f"Invalid artifact depth: {depth}. Must be >= 0")
+
     path = Path(source_file).resolve()
 
+    current = path
+    for _ in range(depth):
+        current = current.parent
+        if current.name in {"selector"}:
+            raise ValueError(
+                f"Invalid artifact copy: encountered forbidden folder '{current.name}' "
+                f"while traversing {depth} levels up from {original_path}"
+            )
+    
     if depth == 0:
         destination = destination_root / path.name
         shutil.copy2(path, destination)
