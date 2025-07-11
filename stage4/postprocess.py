@@ -71,7 +71,7 @@ def copy_artifact(source_file: Path, depth: int, destination_root: Path) -> str:
         if current.name in {"selector"}:
             raise ValueError(
                 f"Invalid artifact copy: encountered forbidden folder '{current.name}' "
-                f"while traversing {depth} levels up from {original_path}"
+                f"while traversing {depth} levels up from {path}"
             )
     
     if depth == 0:
